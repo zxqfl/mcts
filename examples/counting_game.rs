@@ -1,16 +1,22 @@
 extern crate mcts;
 
 use mcts::*;
+use mcts::tree_policy::*;
 
 #[derive(Clone, Copy)]
-struct CountingGame(i32);
+struct CountingGame(i64);
 
 impl GameState for CountingGame {
     type Move = CountingGame;
     type GameResult = ();
+    type Player = ();
 
     fn result(&self) -> Option<Self::GameResult> {
         None
+    }
+
+    fn current_player(&self) -> Self::Player {
+        ()
     }
 
     fn available_moves(&self) -> Vec<Self::Move> {
@@ -23,21 +29,22 @@ impl GameState for CountingGame {
     }
 }
 
-use std::cell::*;
-
 struct MyEvaluator {}
 
 impl Evaluator<MyMCTS> for MyEvaluator {
     type StateEvaluation = i64;
-    type MoveEvaluation = i64;
 
-    fn evaluate_state_and_moves(&self, state: &CountingGame, moves: &[CountingGame],
+    fn evaluate_new_state(&self, state: &CountingGame, moves: &[CountingGame],
         handle: SearchHandle<MyMCTS>)
-        -> (i64, Vec<i64>) {
-        (0, moves.iter().map(|_| 0).collect())
+        -> (Vec<f64>, i64) {
+        (moves.iter().map(|_| 0.0).collect(), state.0)
     }
 
-    fn interpret_evaluation_for_current_player(&self, state: &CountingGame, evaln: &i64) -> i64 {
+    fn interpret_evaluation_for_player(&self, evaln: &i64, player: &()) -> i64 {
+        *evaln
+    }
+
+    fn evaluate_existing_state(&self, _: &CountingGame,  evaln: &i64, _: SearchHandle<MyMCTS>) -> i64 {
         *evaln
     }
 }
@@ -48,11 +55,10 @@ impl MCTS for MyMCTS {
     type State = CountingGame;
     type Eval = MyEvaluator;
     type NodeData = ();
-    type ThreadLocalData = ();
+    type ThreadLocalData = PolicyRng;
     type GlobalData = ();
-
+    type TreePolicy = UCTPolicy;
 }
 
 fn main() {
-
 }

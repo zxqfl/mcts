@@ -9,6 +9,33 @@ use tree_policy::*;
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 
+pub trait MCTS: Sized + Sync {
+    type State: GameState + Sync;
+    type Eval: Evaluator<Self>;
+    type TreePolicy: TreePolicy<Self>;
+    type NodeData: Default + Sync;
+    type ThreadLocalData: Default + Sync;
+    type GlobalData: Default + Sync;
+
+    fn virtual_loss(&self) -> i64 {
+        1000000000
+    }
+    fn visits_before_expansion(&self) -> u64 {
+        1
+    }
+
+    fn add_state_to_transposition_table(&self, _state: &Self::State, _node: OpaqueNode<Self>,
+        _handle: SearchHandle<Self>) {}
+
+    fn lookup_transposition_table(&self, _state: &Self::State) -> Option<OpaqueNode<Self>> {
+        None
+    }
+
+    fn on_backpropagation(&self,
+        evaln: &<<Self as MCTS>::Eval as Evaluator<Self>>::StateEvaluation,
+        handle: SearchHandle<Self>) {}
+}
+
 pub struct MCTSManager<Spec: MCTS> {
     search_tree: SearchTree<Spec>,
     // thread local data when we have no asynchronous workers
@@ -61,31 +88,13 @@ impl<Spec: MCTS> MCTSManager<Spec> {
     }
 }
 
-pub trait MCTS: Sized + Sync {
-    type State: GameState + Sync;
-    type Eval: Evaluator<Self>;
-    type TreePolicy: TreePolicy<Self>;
-    type NodeData: Default + Sync;
-    type ThreadLocalData: Default + Sync;
-    type GlobalData: Default + Sync;
-
-    fn add_state_to_transposition_table(&self, _state: &Self::State, _node: OpaqueNode<Self>,
-        _handle: SearchHandle<Self>) {}
-
-    fn lookup_transposition_table(&self, _state: &Self::State) -> Option<NodeHandle<Self>> {
-        None
-    }
-
-    fn virtual_loss(&self) -> i64 {
-        1000000000
-    }
-}
-
 pub trait GameState: Clone {
     type Move: Sync;
+    type Player: Sync;
     type GameResult;
 
     fn result(&self) -> Option<Self::GameResult>;
+    fn current_player(&self) -> Self::Player;
     fn available_moves(&self) -> Vec<Self::Move>;
     fn make_move(&mut self, mov: &Self::Move);
 }
@@ -93,15 +102,16 @@ pub trait GameState: Clone {
 pub trait Evaluator<Spec: MCTS>: Sync {
     type StateEvaluation: Sync;
 
-    fn evaluate_moves(&self,
+    fn evaluate_new_state(&self,
         state: &Spec::State, moves: &[<<Spec as MCTS>::State as GameState>::Move],
         handle: SearchHandle<Spec>)
-        -> (Vec<f64>, Option<Self::StateEvaluation>);
+        -> (Vec<f64>, Self::StateEvaluation);
 
-    fn interpret_evaluation_for_current_player(&self, state: &Spec::State,
-        evaluation: &Self::StateEvaluation) -> i64;
-
-    fn evaluate_state(&self, state: &Spec::State, existing: Option<&Self::StateEvaluation>,
+    fn evaluate_existing_state(&self, state: &Spec::State, existing_evaln: &Self::StateEvaluation,
         handle: SearchHandle<Spec>)
         -> Self::StateEvaluation;
+
+    fn interpret_evaluation_for_player(&self,
+        evaluation: &Self::StateEvaluation,
+        player: &<<Spec as MCTS>::State as GameState>::Player) -> i64;
 }

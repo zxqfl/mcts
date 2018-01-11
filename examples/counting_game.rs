@@ -8,12 +8,7 @@ struct CountingGame(i64);
 
 impl GameState for CountingGame {
     type Move = CountingGame;
-    type GameResult = ();
     type Player = ();
-
-    fn result(&self) -> Option<Self::GameResult> {
-        None
-    }
 
     fn current_player(&self) -> Self::Player {
         ()
@@ -35,12 +30,12 @@ impl Evaluator<MyMCTS> for MyEvaluator {
     type StateEvaluation = i64;
 
     fn evaluate_new_state(&self, state: &CountingGame, moves: &[CountingGame],
-        handle: SearchHandle<MyMCTS>)
+        _: SearchHandle<MyMCTS>)
         -> (Vec<f64>, i64) {
         (moves.iter().map(|_| 0.0).collect(), state.0)
     }
 
-    fn interpret_evaluation_for_player(&self, evaln: &i64, player: &()) -> i64 {
+    fn interpret_evaluation_for_player(&self, evaln: &i64, _player: &()) -> i64 {
         *evaln
     }
 
@@ -61,4 +56,5 @@ impl MCTS for MyMCTS {
 }
 
 fn main() {
+    let game = CountingGame(0);
 }

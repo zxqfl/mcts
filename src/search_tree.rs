@@ -107,7 +107,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
         let mut path: SmallVec<[*const SearchNode<Spec>; LARGE_DEPTH]> = SmallVec::new();
         path.push(&self.root_node);
         let mut did_we_create = false;
-        while state.result().is_none() {
+        loop {
             if path.len() == LARGE_DEPTH {
                 for i in 0..(LARGE_DEPTH - 1) {
                     assert!(path[i] != path[LARGE_DEPTH - 1],
@@ -118,6 +118,9 @@ impl<Spec: MCTS> SearchTree<Spec> {
             let node = unsafe {
                 &*path[path.len() - 1]
             };
+            if node.moves.len() == 0 {
+                break;
+            }
             node.sum_evaluations.fetch_sub(self.manager.virtual_loss() as isize, Ordering::Relaxed);
             let visits = node.visits.fetch_add(1, Ordering::Release) + 1;
             if visits as u64 <= self.manager.visits_before_expansion() {
@@ -199,16 +202,29 @@ impl<Spec: MCTS> SearchTree<Spec> {
         let global_data = &self.global_data;
         SearchHandle {node, tld, global_data}
     }
+
+    pub fn principal_variation(&mut self) -> Vec<<<Spec as MCTS>::State as GameState>::Move> {
+        let mut result = Vec::new();
+        let mut crnt = &self.root_node;
+        while crnt.moves.len() != 0 {
+            let choice = self.manager.select_child_after_search(&crnt.moves);
+            result.push(choice.mov.clone());
+            let child = choice.child.load(Ordering::SeqCst) as *const SearchNode<Spec>;
+            if child == null() {
+                break;
+            } else {
+                unsafe {
+                    crnt = &*child;
+                }
+            }
+        }
+        result
+    }
 }
 
 #[derive(Clone, Copy)]
 pub struct NodeHandle<'a, Spec: 'a + MCTS> {
     node: &'a SearchNode<Spec>,
-}
-
-#[derive(Clone, Copy)]
-pub struct OpaqueNode<Spec: MCTS> {
-    ptr: *const SearchNode<Spec>,
 }
 
 impl<'a, Spec: MCTS> NodeHandle<'a, Spec> {

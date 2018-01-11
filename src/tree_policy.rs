@@ -42,19 +42,10 @@ where for<'a> (&'a mut Spec::ThreadLocalData): Into<&'a mut PolicyRng>
             let child_visits = mov.visits();
             // http://mcts.ai/pubs/mcts-survey-master.pdf
             let adjusted_total = (total_visits + 1) as f64;
-            let explore_term = if child_visits == 0 {
-                std::f64::INFINITY
-            } else {
-                2.0 * (adjusted_total.ln() / child_visits as f64).sqrt()
-            };
-            let average_reward = if total_visits == 0 {
-                0.0
-            } else {
-                (sum_evaluations as f64) / (total_visits as f64)
-            };
+            let explore_term = 2.0 * (adjusted_total.ln() / (child_visits + 1) as f64).sqrt();
+            let average_reward = (sum_evaluations as f64 + mov.evaluation()) / adjusted_total;
             let score =
-                  mov.evaluation()
-                + self.exploration_constant * explore_term
+                  self.exploration_constant * explore_term
                 + average_reward;
             if score > best_so_far {
                 best_so_far = score;

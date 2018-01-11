@@ -23,17 +23,20 @@ pub trait MCTS: Sized + Sync {
     fn visits_before_expansion(&self) -> u64 {
         1
     }
+    fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
+        children.into_iter().max_by_key(|child| child.visits()).unwrap()
+    }
 
-    fn add_state_to_transposition_table(&self, _state: &Self::State, _node: OpaqueNode<Self>,
+    fn add_state_to_transposition_table<'a>(&'a self, _state: &Self::State, _node: NodeHandle<'a, Self>,
         _handle: SearchHandle<Self>) {}
 
-    fn lookup_transposition_table(&self, _state: &Self::State) -> Option<OpaqueNode<Self>> {
+    fn lookup_transposition_table<'a>(&'a self, _state: &Self::State) -> Option<NodeHandle<'a, Self>> {
         None
     }
 
     fn on_backpropagation(&self,
-        evaln: &<<Self as MCTS>::Eval as Evaluator<Self>>::StateEvaluation,
-        handle: SearchHandle<Self>) {}
+        _evaln: &<<Self as MCTS>::Eval as Evaluator<Self>>::StateEvaluation,
+        _handle: SearchHandle<Self>) {}
 }
 
 pub struct MCTSManager<Spec: MCTS> {
@@ -86,14 +89,15 @@ impl<Spec: MCTS> MCTSManager<Spec> {
             }
         });
     }
+    pub fn principal_variation(&mut self) -> Vec<<<Spec as MCTS>::State as GameState>::Move> {
+        self.search_tree.principal_variation()
+    }
 }
 
 pub trait GameState: Clone {
-    type Move: Sync;
+    type Move: Sync + Clone;
     type Player: Sync;
-    type GameResult;
 
-    fn result(&self) -> Option<Self::GameResult>;
     fn current_player(&self) -> Self::Player;
     fn available_moves(&self) -> Vec<Self::Move>;
     fn make_move(&mut self, mov: &Self::Move);

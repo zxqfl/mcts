@@ -3,7 +3,7 @@ extern crate mcts;
 use mcts::*;
 use mcts::tree_policy::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct CountingGame(i64);
 
 impl GameState for CountingGame {
@@ -30,7 +30,7 @@ impl Evaluator<MyMCTS> for MyEvaluator {
     type StateEvaluation = i64;
 
     fn evaluate_new_state(&self, state: &CountingGame, moves: &[CountingGame],
-        _: SearchHandle<MyMCTS>)
+        _: Option<SearchHandle<MyMCTS>>)
         -> (Vec<f64>, i64) {
         (moves.iter().map(|_| 0.0).collect(), state.0)
     }
@@ -53,8 +53,19 @@ impl MCTS for MyMCTS {
     type ThreadLocalData = PolicyRng;
     type GlobalData = ();
     type TreePolicy = UCTPolicy;
+
+    fn virtual_loss(&self) -> i64 {
+        500
+    }
 }
 
 fn main() {
     let game = CountingGame(0);
+    let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(0.5), MyEvaluator{});
+    mcts.playout_n_parallel(10000, 4);
+    // mcts.playout_n(10000);
+    let pv: Vec<_> = mcts.principal_variation(10).into_iter().map(|x| x.0).collect();
+    println!("{}", pv.len());
+    println!("{:?}", pv);
+    mcts.tree().print_moves();
 }

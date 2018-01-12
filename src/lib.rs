@@ -18,13 +18,14 @@ pub trait MCTS: Sized + Sync {
     type GlobalData: Default + Sync;
 
     fn virtual_loss(&self) -> i64 {
-        1000000000
+        0
     }
     fn visits_before_expansion(&self) -> u64 {
         1
     }
     fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
-        children.into_iter().max_by_key(|child| child.visits()).unwrap()
+        children.into_iter().max_by_key(|child|
+            child.visits() as i64 * child.visits() as i64 + child.sum_evaluations()).unwrap()
     }
 
     fn add_state_to_transposition_table<'a>(&'a self, _state: &Self::State, _node: NodeHandle<'a, Self>,
@@ -46,6 +47,13 @@ pub struct MCTSManager<Spec: MCTS> {
 }
 
 impl<Spec: MCTS> MCTSManager<Spec> {
+    pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
+            -> Self {
+        let search_tree = SearchTree::new(state, manager, tree_policy, eval);
+        let single_threaded_tld = None;
+        Self {search_tree, single_threaded_tld}
+    }
+
     pub fn playout(&mut self) {
         if self.single_threaded_tld.is_none() {
             self.single_threaded_tld = Some(Default::default());
@@ -89,9 +97,12 @@ impl<Spec: MCTS> MCTSManager<Spec> {
             }
         });
     }
-    pub fn principal_variation(&mut self) -> Vec<<<Spec as MCTS>::State as GameState>::Move> {
-        self.search_tree.principal_variation()
+    pub fn principal_variation(&mut self, limit: usize)
+            -> Vec<<<Spec as MCTS>::State as GameState>::Move> {
+        self.search_tree.principal_variation(limit)
     }
+    pub fn tree(&self) -> &SearchTree<Spec> {&self.search_tree}
+    pub fn tree_mut(&mut self) -> &mut SearchTree<Spec> {&mut self.search_tree}
 }
 
 pub trait GameState: Clone {
@@ -108,7 +119,7 @@ pub trait Evaluator<Spec: MCTS>: Sync {
 
     fn evaluate_new_state(&self,
         state: &Spec::State, moves: &[<<Spec as MCTS>::State as GameState>::Move],
-        handle: SearchHandle<Spec>)
+        handle: Option<SearchHandle<Spec>>)
         -> (Vec<f64>, Self::StateEvaluation);
 
     fn evaluate_existing_state(&self, state: &Spec::State, existing_evaln: &Self::StateEvaluation,

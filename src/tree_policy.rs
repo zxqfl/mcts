@@ -17,8 +17,8 @@ pub struct UCTPolicy {
 
 impl UCTPolicy {
     pub fn new(exploration_constant: f64) -> Self {
-        assert!(exploration_constant >= 0.0,
-            "exploration constant is {} (must be non-negative)",
+        assert!(exploration_constant > 0.0,
+            "exploration constant is {} (must be positive)",
             exploration_constant);
         UCTPolicy {exploration_constant}
     }
@@ -42,8 +42,12 @@ where for<'a> (&'a mut Spec::ThreadLocalData): Into<&'a mut PolicyRng>
             let child_visits = mov.visits();
             // http://mcts.ai/pubs/mcts-survey-master.pdf
             let adjusted_total = (total_visits + 1) as f64;
-            let explore_term = 2.0 * (adjusted_total.ln() / (child_visits + 1) as f64).sqrt();
-            let average_reward = (sum_evaluations as f64 + mov.evaluation()) / adjusted_total;
+            let explore_term = if child_visits == 0 {
+                std::f64::INFINITY
+            } else {
+                2.0 * (adjusted_total.ln() / child_visits as f64).sqrt()
+            };
+            let average_reward = sum_evaluations as f64 / adjusted_total;
             let score =
                   self.exploration_constant * explore_term
                 + average_reward;

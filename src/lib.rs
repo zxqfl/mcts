@@ -24,8 +24,7 @@ pub trait MCTS: Sized + Sync {
         1
     }
     fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
-        children.into_iter().max_by_key(|child|
-            child.visits() as i64 * child.visits() as i64 + child.sum_evaluations()).unwrap()
+        children.into_iter().max_by_key(|child| child.visits()).unwrap()
     }
 
     fn add_state_to_transposition_table<'a>(&'a self, _state: &Self::State, _node: NodeHandle<'a, Self>,

@@ -16,7 +16,11 @@ impl GameState for CountingGame {
 
     fn available_moves(&self) -> Vec<Self::Move> {
         let x = self.0;
-        vec![CountingGame(x - 1), CountingGame(x + 1)]
+        if x == 100 {
+            vec![]
+        } else {
+            vec![CountingGame(x - 1), CountingGame(x + 1)]
+        }
     }
 
     fn make_move(&mut self, mov: &Self::Move) {
@@ -61,11 +65,10 @@ impl MCTS for MyMCTS {
 
 fn main() {
     let game = CountingGame(0);
-    let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(0.5), MyEvaluator{});
-    mcts.playout_n_parallel(10000, 4);
-    // mcts.playout_n(10000);
+    let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(50.0), MyEvaluator{});
+    mcts.playout_n(100000);
     let pv: Vec<_> = mcts.principal_variation(10).into_iter().map(|x| x.0).collect();
-    println!("{}", pv.len());
-    println!("{:?}", pv);
+    println!("Principal variation: {:?}", pv);
+    println!("Evaluation of moves:");
     mcts.tree().print_moves();
 }

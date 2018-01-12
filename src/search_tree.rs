@@ -249,9 +249,9 @@ impl<Spec: MCTS> SearchTree<Spec> where <<Spec as MCTS>::State as GameState>::Mo
         moves.sort_by_key(|x| -(x.visits() as i64));
         for mov in moves {
             if mov.visits() == 0 {
-                eprintln!("{:?} [0 visits]", mov.mov);
+                println!("{:?} [0 visits]", mov.mov);
             } else {
-                eprintln!("{:?} [{} visit{}] [{} avg eval]",
+                println!("{:?} [{} visit{}] [{} avg eval]",
                     mov.mov, mov.visits(), if mov.visits() == 1 {""} else {"s"},
                     mov.sum_evaluations() as f64 / mov.visits() as f64);
             }

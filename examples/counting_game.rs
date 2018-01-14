@@ -3,11 +3,16 @@ extern crate mcts;
 use mcts::*;
 use mcts::tree_policy::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone)]
 struct CountingGame(i64);
 
+#[derive(Clone, Debug)]
+enum Move {
+    Add, Sub
+}
+
 impl GameState for CountingGame {
-    type Move = CountingGame;
+    type Move = Move;
     type Player = ();
 
     fn current_player(&self) -> Self::Player {
@@ -19,12 +24,15 @@ impl GameState for CountingGame {
         if x == 100 {
             vec![]
         } else {
-            vec![CountingGame(x - 1), CountingGame(x + 1)]
+            vec![Move::Add, Move::Sub]
         }
     }
 
     fn make_move(&mut self, mov: &Self::Move) {
-        *self = *mov;
+        match *mov {
+            Move::Add => self.0 += 1,
+            Move::Sub => self.0 -= 1,
+        }
     }
 }
 
@@ -33,7 +41,7 @@ struct MyEvaluator {}
 impl Evaluator<MyMCTS> for MyEvaluator {
     type StateEvaluation = i64;
 
-    fn evaluate_new_state(&self, state: &CountingGame, moves: &[CountingGame],
+    fn evaluate_new_state(&self, state: &CountingGame, moves: &[Move],
         _: Option<SearchHandle<MyMCTS>>)
         -> (Vec<f64>, i64) {
         (moves.iter().map(|_| 0.0).collect(), state.0)
@@ -64,10 +72,18 @@ impl MCTS for MyMCTS {
 }
 
 fn main() {
+    use std::time::Duration;
+    use std::time::Instant;
+
     let game = CountingGame(0);
     let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(50.0), MyEvaluator{});
     mcts.playout_n(100000);
-    let pv: Vec<_> = mcts.principal_variation(10).into_iter().map(|x| x.0).collect();
+    let t1 = Instant::now();
+    mcts.playout_parallel_for(Duration::from_millis(2000), 4);
+    let taken = Instant::now().duration_since(t1);
+    println!("Searched for {:?}", taken);
+    mcts.playout_parallel_async(4);
+    let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
     println!("Principal variation: {:?}", pv);
     println!("Evaluation of moves:");
     mcts.tree().print_moves();

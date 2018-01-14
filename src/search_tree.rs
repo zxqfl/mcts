@@ -1,6 +1,18 @@
-use super::{MCTS, GameState, Evaluator};
-use std::sync::atomic::{AtomicIsize, AtomicUsize, AtomicPtr, Ordering};
+#![cfg_attr(feature = "nightly", feature(integer_atomics))]
+
 use std;
+
+#[cfg(not(any(target_pointer_width = "64", feature = "nightly")))]
+compile_error!("If you aren't compiling for 64-bit, you must use the nightly compiler.");
+
+#[cfg(target_pointer_width = "64")]
+type AtomicI64 = std::sync::atomic::AtomicIsize;
+
+#[cfg(not(target_pointer_width = "64"))]
+type AtomicI64 = std::sync::atomic::AtomicI64;
+
+use super::*;
+use std::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
 use std::ptr::{null, null_mut};
 use smallvec::SmallVec;
 use std::fmt::Debug;
@@ -17,28 +29,28 @@ pub struct SearchTree<Spec: MCTS> {
 }
 
 pub struct MoveInfo<Spec: MCTS> {
-    mov: <<Spec as MCTS>::State as GameState>::Move,
+    mov: Move<Spec>,
     move_evaluation: f64,
     child: AtomicPtr<SearchNode<Spec>>,
 }
 
-pub struct SearchNode<Spec: MCTS> {
+struct SearchNode<Spec: MCTS> {
     moves: Vec<MoveInfo<Spec>>,
     visits: AtomicUsize,
-    sum_evaluations: AtomicIsize,
+    sum_evaluations: AtomicI64,
     data: Spec::NodeData,
-    evaln: <<Spec as MCTS>::Eval as Evaluator<Spec>>::StateEvaluation,
-    player: <<Spec as MCTS>::State as GameState>::Player,
+    evaln: StateEvaluation<Spec>,
+    player: Player<Spec>,
 }
 
 impl<Spec: MCTS> SearchNode<Spec> {
     fn new(moves: Vec<MoveInfo<Spec>>,
-            evaln: <<Spec as MCTS>::Eval as Evaluator<Spec>>::StateEvaluation,
-            player: <<Spec as MCTS>::State as GameState>::Player) -> Self {
+            evaln: StateEvaluation<Spec>,
+            player: Player<Spec>) -> Self {
         Self {
             moves,
             visits: AtomicUsize::new(0),
-            sum_evaluations: AtomicIsize::new(0),
+            sum_evaluations: AtomicI64::new(0),
             data: Default::default(),
             evaln,
             player,
@@ -47,7 +59,7 @@ impl<Spec: MCTS> SearchNode<Spec> {
 }
 
 impl<Spec: MCTS> MoveInfo<Spec> {
-    fn new(mov: <<Spec as MCTS>::State as GameState>::Move, move_evaluation: f64) -> Self {
+    fn new(mov: Move<Spec>, move_evaluation: f64) -> Self {
         MoveInfo {
             mov,
             move_evaluation,
@@ -55,7 +67,7 @@ impl<Spec: MCTS> MoveInfo<Spec> {
         }
     }
 
-    pub fn get_move(&self) -> &<<Spec as MCTS>::State as GameState>::Move {
+    pub fn get_move(&self) -> &Move<Spec> {
         &self.mov
     }
 
@@ -113,13 +125,6 @@ fn create_node<Spec: MCTS>(eval: &Spec::Eval, state: &Spec::State,
     SearchNode::new(moves, state_eval, player)
 }
 
-fn expand_child<Spec: MCTS>(eval: &Spec::Eval, state: &mut Spec::State,
-        mov: &<<Spec as MCTS>::State as GameState>::Move, handle: SearchHandle<Spec>)
-        -> SearchNode<Spec> {
-    state.make_move(mov);
-    create_node(eval, state, Some(handle))
-}
-
 impl<Spec: MCTS> SearchTree<Spec> {
     pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
             -> Self {
@@ -165,13 +170,14 @@ impl<Spec: MCTS> SearchTree<Spec> {
                 "The index {} chosen by the tree policy is out of the allowed range [0, {})",
                 choice, node.moves.len());
             let choice = &node.moves[choice];
+            state.make_move(&choice.mov);
             let mut child;
             loop {
                 child = choice.child.load(Ordering::Acquire) as *const SearchNode<Spec>;
                 did_we_create = false;
                 if child == null() {
-                    let new_child = expand_child(&self.eval, &mut state, &choice.mov,
-                        self.make_handle(node, tld));
+                    let new_child = create_node(&self.eval, &state,
+                        Some(self.make_handle(node, tld)));
                     let new_child = Box::into_raw(Box::new(new_child)); // move to heap
                     let result = choice.child.compare_and_swap(null_mut(), new_child, Ordering::Release);
                     if result == null_mut() {
@@ -224,7 +230,11 @@ impl<Spec: MCTS> SearchTree<Spec> {
         SearchHandle {node, tld, global_data}
     }
 
-    pub fn principal_variation(&mut self, limit: usize) -> Vec<<<Spec as MCTS>::State as GameState>::Move> {
+    pub fn state(&self) -> &Spec::State {
+        &self.root_state
+    }
+
+    pub fn principal_variation(&mut self, limit: usize) -> Vec<Move<Spec>> {
         let mut result = Vec::new();
         let mut crnt = &self.root_node;
         while crnt.moves.len() != 0 && result.len() < limit {
@@ -243,7 +253,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
     }
 }
 
-impl<Spec: MCTS> SearchTree<Spec> where <<Spec as MCTS>::State as GameState>::Move: Debug {
+impl<Spec: MCTS> SearchTree<Spec> where Move<Spec>: Debug {
     pub fn print_moves(&self) {
         let mut moves: Vec<&MoveInfo<Spec>> = self.root_node.moves.iter().collect();
         moves.sort_by_key(|x| -(x.visits() as i64));

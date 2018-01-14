@@ -10,6 +10,6 @@ categories = ["algorithms"]
 license = "MIT"
 
 [dependencies]
-crossbeam = "*"
-rand = "*"
-smallvec = "*"
+crossbeam = "0.3"
+rand = "0.4"
+smallvec = "0.6"

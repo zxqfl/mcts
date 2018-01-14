@@ -148,7 +148,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
                 choice, node.moves.len());
             let choice = &node.moves[choice];
             let child_visits = choice.visits.fetch_add(1, Ordering::Relaxed) + 1;
-            choice.sum_evaluations.fetch_add(1, Ordering::Relaxed);
+            choice.sum_evaluations.fetch_add(self.manager.virtual_loss() as isize, Ordering::Relaxed);
             path.push(choice);
             state.make_move(&choice.mov);
             players.push(state.current_player());

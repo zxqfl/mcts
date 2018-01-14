@@ -38,8 +38,7 @@ where for<'a> (&'a mut Spec::ThreadLocalData): Into<&'a mut PolicyRng>
         let mut choice: usize = std::usize::MAX;
         let mut num_optimal: u32 = 0;
         let mut best_so_far: f64 = std::f64::NEG_INFINITY;
-        let node = handle.node();
-        let total_visits = node.visits();
+        let total_visits = moves.iter().map(|x| x.visits()).sum::<u64>();
         let rng = &mut handle.thread_local_data().into().rng;
         for (index, mov) in moves.iter().enumerate() {
             let sum_evaluations = mov.sum_evaluations();

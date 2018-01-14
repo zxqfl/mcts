@@ -91,7 +91,7 @@ pub mod tree_policy;
 pub use search_tree::*;
 use tree_policy::*;
 
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -188,7 +188,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
     }
     pub fn playout_parallel_async<'a>(&'a mut self, num_threads: usize) -> AsyncSearch<'a, Spec> {
         assert!(num_threads != 0);
-        let stop_signal = Arc::new(AtomicIsize::new(0));
+        let stop_signal = Arc::new(AtomicBool::new(false));
         let threads = (0..num_threads).map(|_| {
             unsafe {
                 let stop_signal = stop_signal.clone();
@@ -196,7 +196,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
                 crossbeam::spawn_unsafe(move || {
                     let mut tld = Spec::ThreadLocalData::default();
                     loop {
-                        if stop_signal.load(Ordering::SeqCst) != 0 {
+                        if stop_signal.load(Ordering::SeqCst) {
                             break;
                         }
                         search_tree.playout(&mut tld);
@@ -256,7 +256,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
 #[must_use]
 pub struct AsyncSearch<'a, Spec: 'a + MCTS> {
     manager: &'a mut MCTSManager<Spec>,
-    stop_signal: Arc<AtomicIsize>,
+    stop_signal: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -268,7 +268,7 @@ impl<'a, Spec: MCTS> AsyncSearch<'a, Spec> {
 
 impl<'a, Spec: MCTS> Drop for AsyncSearch<'a, Spec> {
     fn drop(&mut self) {
-        self.stop_signal.store(1, Ordering::SeqCst);
+        self.stop_signal.store(true, Ordering::SeqCst);
         for t in self.threads.drain(..) {
             t.join().unwrap();
         }

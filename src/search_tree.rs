@@ -40,8 +40,6 @@ pub struct MoveInfo<Spec: MCTS> {
 
 struct SearchNode<Spec: MCTS> {
     moves: Vec<MoveInfo<Spec>>,
-    // visits: AtomicUsize,
-    // sum_evaluations: AtomicI64,
     data: Spec::NodeData,
     evaln: StateEvaluation<Spec>,
 }
@@ -51,8 +49,6 @@ impl<Spec: MCTS> SearchNode<Spec> {
             evaln: StateEvaluation<Spec>) -> Self {
         Self {
             moves,
-            // visits: AtomicUsize::new(0),
-            // sum_evaluations: AtomicI64::new(0),
             data: Default::default(),
             evaln,
         }

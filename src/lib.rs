@@ -1,3 +1,87 @@
+
+//! This is a library for Monte Carlo tree search. 
+//! 
+//! It is still under development and the documentation isn't good. However, the following example may be helpful:
+//!
+//! ```
+//! use mcts::*;
+//! use mcts::tree_policy::*;
+//! 
+//! #[derive(Clone, Debug, PartialEq)]
+//! struct CountingGame(i64);
+//! 
+//! #[derive(Clone, Debug, PartialEq)]
+//! enum Move {
+//!     Add, Sub
+//! }
+//! 
+//! impl GameState for CountingGame {
+//!     type Move = Move;
+//!     type Player = ();
+//! 
+//!     fn current_player(&self) -> Self::Player {
+//!         ()
+//!     }
+//!     fn available_moves(&self) -> Vec<Self::Move> {
+//!         let x = self.0;
+//!         if x == 100 {
+//!             vec![]
+//!         } else {
+//!             vec![Move::Add, Move::Sub]
+//!         }
+//!     }
+//!     fn make_move(&mut self, mov: &Self::Move) {
+//!         match *mov {
+//!             Move::Add => self.0 += 1,
+//!             Move::Sub => self.0 -= 1,
+//!         }
+//!     }
+//! }
+//! 
+//! struct MyEvaluator {}
+//! 
+//! impl Evaluator<MyMCTS> for MyEvaluator {
+//!     type StateEvaluation = i64;
+//! 
+//!     fn evaluate_new_state(&self, state: &CountingGame, moves: &[Move],
+//!         _: Option<SearchHandle<MyMCTS>>)
+//!         -> (Vec<f64>, i64) {
+//!         (moves.iter().map(|_| 0.0).collect(), state.0)
+//!     }
+//!     fn interpret_evaluation_for_player(&self, evaln: &i64, _player: &()) -> i64 {
+//!         *evaln
+//!     }
+//!     fn evaluate_existing_state(&self, _: &CountingGame,  evaln: &i64, _: SearchHandle<MyMCTS>) -> i64 {
+//!         *evaln
+//!     }
+//! }
+//! 
+//! struct MyMCTS {}
+//! 
+//! impl MCTS for MyMCTS {
+//!     type State = CountingGame;
+//!     type Eval = MyEvaluator;
+//!     type NodeData = ();
+//!     type ThreadLocalData = PolicyRng;
+//!     type GlobalData = ();
+//!     type TreePolicy = UCTPolicy;
+//! }
+//! 
+//! let game = CountingGame(0);
+//! let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(0.5), MyEvaluator{});
+//! mcts.playout_n_parallel(100000, 4);
+//! assert_eq!(mcts.principal_variation(5),
+//!     vec![Move::Add, Move::Add, Move::Add, Move::Add, Move::Add]);
+//! assert_eq!(mcts.principal_variation_states(5),
+//!     vec![
+//!         CountingGame(0),
+//!         CountingGame(1),
+//!         CountingGame(2),
+//!         CountingGame(3),
+//!         CountingGame(4),
+//!         CountingGame(5)]);
+//! ```
+
 extern crate crossbeam;
 extern crate smallvec;
 
@@ -152,13 +236,13 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
             }
         });
     }
-    pub fn principal_variation(&mut self, limit: usize) -> Vec<Move<Spec>> {
-        self.search_tree.principal_variation(limit)
+    pub fn principal_variation(&self, num_moves: usize) -> Vec<Move<Spec>> {
+        self.search_tree.principal_variation(num_moves)
     }
-    pub fn principal_variation_states(&mut self, limit: usize)
+    pub fn principal_variation_states(&self, num_moves: usize)
             -> Vec<Spec::State> {
-        let moves = self.principal_variation(limit);
-        let mut states = vec![self.search_tree.state().clone()];
+        let moves = self.principal_variation(num_moves);
+        let mut states = vec![self.search_tree.root_state().clone()];
         for mov in moves {
             let mut state = states[states.len() - 1].clone();
             state.make_move(&mov);
@@ -167,7 +251,6 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
         states
     }
     pub fn tree(&self) -> &SearchTree<Spec> {&self.search_tree}
-    pub fn tree_mut(&mut self) -> &mut SearchTree<Spec> {&mut self.search_tree}
 }
 
 #[must_use]

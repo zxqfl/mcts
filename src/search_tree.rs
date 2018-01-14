@@ -19,6 +19,8 @@ use std::fmt::Debug;
 
 use tree_policy::TreePolicy;
 
+/// You're not intended to use this class (use an `MCTSManager` instead),
+/// but you can use it if you want to manage the threads yourself.
 pub struct SearchTree<Spec: MCTS> {
     root_node: SearchNode<Spec>,
     root_state: Spec::State,
@@ -230,14 +232,14 @@ impl<Spec: MCTS> SearchTree<Spec> {
         SearchHandle {node, tld, global_data}
     }
 
-    pub fn state(&self) -> &Spec::State {
+    pub fn root_state(&self) -> &Spec::State {
         &self.root_state
     }
 
-    pub fn principal_variation(&mut self, limit: usize) -> Vec<Move<Spec>> {
+    pub fn principal_variation(&self, num_moves: usize) -> Vec<Move<Spec>> {
         let mut result = Vec::new();
         let mut crnt = &self.root_node;
-        while crnt.moves.len() != 0 && result.len() < limit {
+        while crnt.moves.len() != 0 && result.len() < num_moves {
             let choice = self.manager.select_child_after_search(&crnt.moves);
             result.push(choice.mov.clone());
             let child = choice.child.load(Ordering::SeqCst) as *const SearchNode<Spec>;

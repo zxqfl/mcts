@@ -72,17 +72,9 @@ impl MCTS for MyMCTS {
 }
 
 fn main() {
-    use std::time::Duration;
-    use std::time::Instant;
-
     let game = CountingGame(0);
     let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(50.0), MyEvaluator{});
     mcts.playout_n(100000);
-    let t1 = Instant::now();
-    mcts.playout_parallel_for(Duration::from_millis(2000), 4);
-    let taken = Instant::now().duration_since(t1);
-    println!("Searched for {:?}", taken);
-    mcts.playout_parallel_async(4);
     let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
     println!("Principal variation: {:?}", pv);
     println!("Evaluation of moves:");

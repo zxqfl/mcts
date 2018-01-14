@@ -2,6 +2,13 @@
 authors = ["Jacob Jackson <jacobbfjackson@gmail.com>"]
 name = "mcts"
 version = "0.1.0"
+description = "This is a library for Monte Carlo tree search."
+repository = "https://github.com/zxqfl/mcts"
+readme = "README.md"
+keywords = ["monte carlo", "tree search", "ai"]
+categories = ["algorithms"]
+license = "MIT"
+
 [dependencies]
 crossbeam = "*"
 rand = "*"

@@ -22,6 +22,10 @@ impl UCTPolicy {
             exploration_constant);
         UCTPolicy {exploration_constant}
     }
+
+    pub fn exploration_constant(&self) -> f64 {
+        self.exploration_constant
+    }
 }
 
 impl<Spec: MCTS> TreePolicy<Spec> for UCTPolicy

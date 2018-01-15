@@ -32,7 +32,7 @@ pub struct SearchTree<Spec: MCTS> {
 
 pub struct MoveInfo<Spec: MCTS> {
     mov: Move<Spec>,
-    move_evaluation: f64,
+    move_evaluation: MoveEvaluation<Spec>,
     child: AtomicPtr<SearchNode<Spec>>,
     visits: AtomicUsize,
     sum_evaluations: AtomicI64,
@@ -56,7 +56,7 @@ impl<Spec: MCTS> SearchNode<Spec> {
 }
 
 impl<Spec: MCTS> MoveInfo<Spec> {
-    fn new(mov: Move<Spec>, move_evaluation: f64) -> Self {
+    fn new(mov: Move<Spec>, move_evaluation: MoveEvaluation<Spec>) -> Self {
         MoveInfo {
             mov,
             move_evaluation,
@@ -70,8 +70,8 @@ impl<Spec: MCTS> MoveInfo<Spec> {
         &self.mov
     }
 
-    pub fn evaluation(&self) -> f64 {
-        self.move_evaluation
+    pub fn evaluation(&self) -> &MoveEvaluation<Spec> {
+        &self.move_evaluation
     }
 
     pub fn visits(&self) -> u64 {

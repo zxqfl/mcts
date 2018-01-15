@@ -45,8 +45,8 @@
 //! 
 //!     fn evaluate_new_state(&self, state: &CountingGame, moves: &[Move],
 //!         _: Option<SearchHandle<MyMCTS>>)
-//!         -> (Vec<f64>, i64) {
-//!         (moves.iter().map(|_| 0.0).collect(), state.0)
+//!         -> (Vec<()>, i64) {
+//!         (vec![(); moves.len()], state.0)
 //!     }
 //!     fn interpret_evaluation_for_player(&self, evaln: &i64, _player: &()) -> i64 {
 //!         *evaln
@@ -124,6 +124,7 @@ pub trait MCTS: Sized + Sync {
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
 }
 
+pub type MoveEvaluation<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::MoveEvaluation;
 pub type StateEvaluation<Spec> = <<Spec as MCTS>::Eval as Evaluator<Spec>>::StateEvaluation;
 pub type Move<Spec> = <<Spec as MCTS>::State as GameState>::Move;
 pub type Player<Spec> = <<Spec as MCTS>::State as GameState>::Player;
@@ -143,7 +144,7 @@ pub trait Evaluator<Spec: MCTS>: Sync {
     fn evaluate_new_state(&self,
         state: &Spec::State, moves: &[Move<Spec>],
         handle: Option<SearchHandle<Spec>>)
-        -> (Vec<f64>, Self::StateEvaluation);
+        -> (Vec<MoveEvaluation<Spec>>, Self::StateEvaluation);
 
     fn evaluate_existing_state(&self, state: &Spec::State, existing_evaln: &Self::StateEvaluation,
         handle: SearchHandle<Spec>)

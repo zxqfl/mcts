@@ -6,6 +6,7 @@ use super::*;
 use search_tree::*;
 
 pub trait TreePolicy<Spec: MCTS>: Sync {
+    type MoveEvaluation: Sync;
     type ThreadLocalData;
 
     fn choose_child(&self, moves: &[MoveInfo<Spec>], handle: SearchHandle<Spec>) -> usize;
@@ -32,6 +33,7 @@ impl<Spec: MCTS> TreePolicy<Spec> for UCTPolicy
 where for<'a> (&'a mut Spec::ThreadLocalData): Into<&'a mut PolicyRng>
 {
     type ThreadLocalData = PolicyRng;
+    type MoveEvaluation = ();
 
     fn choose_child(&self, moves: &[MoveInfo<Spec>], mut handle: SearchHandle<Spec>) -> usize {
         assert!(moves.len() != 0);

@@ -101,8 +101,8 @@ pub trait MCTS: Sized + Sync {
     type Eval: Evaluator<Self>;
     type TreePolicy: TreePolicy<Self>;
     type NodeData: Default + Sync;
-    type ThreadLocalData: Sync;
     type GlobalData: Default + Sync;
+    type ThreadLocalData;
 
     fn virtual_loss(&self) -> i64 {
         0
@@ -222,6 +222,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
         }
         assert!(num_threads != 0);
         let counter = AtomicIsize::new(n as isize);
+        let search_tree = &self.search_tree;
         crossbeam::scope(|scope| {
             for _ in 0..num_threads {
                 scope.spawn(|| {
@@ -231,7 +232,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
                         if count <= 0 {
                             break;
                         }
-                        self.search_tree.playout(&mut tld);
+                        search_tree.playout(&mut tld);
                     }
                 });
             }

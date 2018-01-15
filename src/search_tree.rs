@@ -83,18 +83,14 @@ impl<Spec: MCTS> MoveInfo<Spec> {
     }
 }
 
-fn drop_if_present<T>(atomic_ptr: &AtomicPtr<T>) {
-    let ptr = atomic_ptr.load(Ordering::SeqCst);
-    if ptr != null_mut() {
-        unsafe {
-            std::ptr::drop_in_place(ptr);
-        }
-    }
-}
-
 impl<Spec: MCTS> Drop for MoveInfo<Spec> {
     fn drop(&mut self) {
-        drop_if_present(&self.child);
+        let ptr = self.child.load(Ordering::SeqCst);
+        if ptr != null_mut() {
+            unsafe {
+                Box::from_raw(ptr);
+            }
+        }
     }
 }
 

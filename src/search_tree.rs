@@ -165,7 +165,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
                     } else {
                         // someone else expanded this child before we did
                         unsafe {
-                            std::ptr::drop_in_place(new_child);
+                            Box::from_raw(new_child);
                         }
                     }
                 } else {

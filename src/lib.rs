@@ -56,20 +56,21 @@
 //!     }
 //! }
 //! 
+//! #[derive(Default)]
 //! struct MyMCTS {}
 //! 
 //! impl MCTS for MyMCTS {
 //!     type State = CountingGame;
 //!     type Eval = MyEvaluator;
 //!     type NodeData = ();
-//!     type ThreadLocalData = PolicyRng;
 //!     type GlobalData = ();
+//!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
 //! }
 //! 
 //! let game = CountingGame(0);
 //! let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(0.5), MyEvaluator{});
-//! mcts.playout_n_parallel(100000, 4);
+//! mcts.playout_n(10000);
 //! assert_eq!(mcts.principal_variation(5),
 //!     vec![Move::Add, Move::Add, Move::Add, Move::Add, Move::Add]);
 //! assert_eq!(mcts.principal_variation_states(5),
@@ -102,7 +103,7 @@ pub trait MCTS: Sized + Sync {
     type TreePolicy: TreePolicy<Self>;
     type NodeData: Default + Sync;
     type GlobalData: Default + Sync;
-    type ThreadLocalData;
+    type ExtraThreadData;
 
     fn virtual_loss(&self) -> i64 {
         0
@@ -122,6 +123,12 @@ pub trait MCTS: Sized + Sync {
     // }
 
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
+}
+
+#[derive(Default)]
+pub struct ThreadData<Spec: MCTS> {
+    pub policy_data: <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::ThreadLocalData,
+    pub extra_data: Spec::ExtraThreadData,
 }
 
 pub type MoveEvaluation<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::MoveEvaluation;
@@ -159,10 +166,10 @@ pub trait Evaluator<Spec: MCTS>: Sync {
 pub struct MCTSManager<Spec: MCTS> {
     search_tree: SearchTree<Spec>,
     // thread local data when we have no asynchronous workers
-    single_threaded_tld: Option<Spec::ThreadLocalData>,
+    single_threaded_tld: Option<ThreadData<Spec>>,
 }
 
-impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
+impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
     pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
             -> Self {
         let search_tree = SearchTree::new(state, manager, tree_policy, eval);
@@ -195,7 +202,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
                 let stop_signal = stop_signal.clone();
                 let search_tree = &self.search_tree;
                 crossbeam::spawn_unsafe(move || {
-                    let mut tld = Spec::ThreadLocalData::default();
+                    let mut tld = Default::default();
                     loop {
                         if stop_signal.load(Ordering::SeqCst) {
                             break;
@@ -226,7 +233,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where Spec::ThreadLocalData: Default {
         crossbeam::scope(|scope| {
             for _ in 0..num_threads {
                 scope.spawn(|| {
-                    let mut tld = Spec::ThreadLocalData::default();
+                    let mut tld = Default::default();
                     loop {
                         let count = counter.fetch_sub(1, Ordering::SeqCst);
                         if count <= 0 {
@@ -263,7 +270,7 @@ pub struct AsyncSearch<'a, Spec: 'a + MCTS> {
 }
 
 impl<'a, Spec: MCTS> AsyncSearch<'a, Spec> {
-    pub fn halt(self) -> &'a  MCTSManager<Spec> {
+    pub fn halt(self) -> &'a mut MCTSManager<Spec> {
         self.manager
     }
 }

@@ -70,7 +70,7 @@ impl<Spec: MCTS> MoveInfo<Spec> {
         &self.mov
     }
 
-    pub fn evaluation(&self) -> &MoveEvaluation<Spec> {
+    pub fn move_evaluation(&self) -> &MoveEvaluation<Spec> {
         &self.move_evaluation
     }
 
@@ -78,7 +78,7 @@ impl<Spec: MCTS> MoveInfo<Spec> {
         self.visits.load(Ordering::Relaxed) as u64
     }
 
-    pub fn sum_evaluations(&self) -> i64 {
+    pub fn sum_rewards(&self) -> i64 {
         self.sum_evaluations.load(Ordering::Relaxed) as i64
     }
 }
@@ -120,7 +120,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
         }
     }
 
-    pub fn playout(&self, tld: &mut Spec::ThreadLocalData) {
+    pub fn playout(&self, tld: &mut ThreadData<Spec>) {
         const LARGE_DEPTH: usize = 64;
         let mut state = self.root_state.clone();
         let mut path: SmallVec<[&MoveInfo<Spec>; LARGE_DEPTH]> = SmallVec::new();
@@ -138,11 +138,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
             if node.moves.len() == 0 {
                 break;
             }
-            let choice = self.tree_policy.choose_child(&node.moves, self.make_handle(node, tld));
-            assert!(choice < node.moves.len(),
-                "The index {} chosen by the tree policy is out of the allowed range [0, {})",
-                choice, node.moves.len());
-            let choice = &node.moves[choice];
+            let choice = self.tree_policy.choose_child(node.moves.iter(), self.make_handle(node, tld));
             let child_visits = choice.visits.fetch_add(1, Ordering::Relaxed) + 1;
             choice.sum_evaluations.fetch_add(self.manager.virtual_loss() as isize, Ordering::Relaxed);
             path.push(choice);
@@ -184,7 +180,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
     }
 
     fn finish_playout(&self, did_we_create: bool, state: &Spec::State,
-            path: &[&MoveInfo<Spec>], players: &[Player<Spec>], tld: &mut Spec::ThreadLocalData,
+            path: &[&MoveInfo<Spec>], players: &[Player<Spec>], tld: &mut ThreadData<Spec>,
             final_node: &SearchNode<Spec>) {
         let new_evaln = if did_we_create {
             None
@@ -205,7 +201,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
         self.manager.on_backpropagation(&evaln, self.make_handle(&self.root_node, tld));
     }
 
-    fn make_handle<'a>(&'a self, node: &'a SearchNode<Spec>, tld: &'a mut Spec::ThreadLocalData)
+    fn make_handle<'a>(&'a self, node: &'a SearchNode<Spec>, tld: &'a mut ThreadData<Spec>)
             -> SearchHandle<'a, Spec> {
         let global_data = &self.global_data;
         SearchHandle {node, tld, global_data}
@@ -242,9 +238,9 @@ impl<Spec: MCTS> SearchTree<Spec> where Move<Spec>: Debug {
             if mov.visits() == 0 {
                 println!("{:?} [0 visits]", mov.mov);
             } else {
-                println!("{:?} [{} visit{}] [{} avg eval]",
+                println!("{:?} [{} visit{}] [{} avg reward]",
                     mov.mov, mov.visits(), if mov.visits() == 1 {""} else {"s"},
-                    mov.sum_evaluations() as f64 / mov.visits() as f64);
+                    mov.sum_rewards() as f64 / mov.visits() as f64);
             }
         }
     }
@@ -263,7 +259,7 @@ impl<'a, Spec: MCTS> NodeHandle<'a, Spec> {
 
 pub struct SearchHandle<'a, Spec: 'a + MCTS> {
     node: &'a SearchNode<Spec>,
-    tld: &'a mut Spec::ThreadLocalData,
+    tld: &'a mut ThreadData<Spec>,
     global_data: &'a Spec::GlobalData,
 }
 
@@ -271,7 +267,7 @@ impl<'a, Spec: MCTS> SearchHandle<'a, Spec> {
     pub fn node(&self) -> NodeHandle<'a, Spec> {
         NodeHandle {node: self.node}
     }
-    pub fn thread_local_data(&mut self) -> &mut Spec::ThreadLocalData {
+    pub fn thread_local_data(&mut self) -> &mut ThreadData<Spec> {
         self.tld
     }
     pub fn global_data(&self) -> &'a Spec::GlobalData {

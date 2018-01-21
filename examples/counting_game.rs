@@ -56,14 +56,15 @@ impl Evaluator<MyMCTS> for MyEvaluator {
     }
 }
 
+#[derive(Default)]
 struct MyMCTS {}
 
 impl MCTS for MyMCTS {
     type State = CountingGame;
     type Eval = MyEvaluator;
     type NodeData = ();
-    type ThreadLocalData = PolicyRng;
     type GlobalData = ();
+    type ExtraThreadData = ();
     type TreePolicy = UCTPolicy;
 
     fn virtual_loss(&self) -> i64 {

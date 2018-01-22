@@ -63,7 +63,6 @@ impl MCTS for MyMCTS {
     type State = CountingGame;
     type Eval = MyEvaluator;
     type NodeData = ();
-    type GlobalData = ();
     type ExtraThreadData = ();
     type TreePolicy = UCTPolicy;
 
@@ -73,13 +72,11 @@ impl MCTS for MyMCTS {
 }
 
 fn main() {
-    loop {
-        let game = CountingGame(0);
-        let mut mcts = MCTSManager::new(game, MyMCTS, UCTPolicy::new(50.0), MyEvaluator);
-        mcts.playout_n(100000);
-        let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
-        println!("Principal variation: {:?}", pv);
-        println!("Evaluation of moves:");
-        mcts.tree().print_moves();
-    }
+    let game = CountingGame(0);
+    let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(5.0));
+    mcts.playout_n(100000);
+    let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
+    println!("Principal variation: {:?}", pv);
+    println!("Evaluation of moves:");
+    mcts.tree().print_moves();
 }

@@ -27,7 +27,6 @@ pub struct SearchTree<Spec: MCTS> {
     tree_policy: Spec::TreePolicy,
     eval: Spec::Eval,
     manager: Spec,
-    global_data: Spec::GlobalData,
 }
 
 pub struct MoveInfo<Spec: MCTS> {
@@ -108,7 +107,6 @@ fn create_node<Spec: MCTS>(eval: &Spec::Eval, state: &Spec::State,
 impl<Spec: MCTS> SearchTree<Spec> {
     pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
             -> Self {
-        let global_data = Default::default();
         let root_node = create_node(&eval, &state, None);
         Self {
             root_state: state,
@@ -116,7 +114,6 @@ impl<Spec: MCTS> SearchTree<Spec> {
             manager,
             tree_policy,
             eval,
-            global_data,
         }
     }
 
@@ -140,7 +137,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
             }
             let choice = self.tree_policy.choose_child(node.moves.iter(), self.make_handle(node, tld));
             let child_visits = choice.visits.fetch_add(1, Ordering::Relaxed) + 1;
-            choice.sum_evaluations.fetch_add(self.manager.virtual_loss() as isize, Ordering::Relaxed);
+            choice.sum_evaluations.fetch_sub(self.manager.virtual_loss() as isize, Ordering::Relaxed);
             path.push(choice);
             state.make_move(&choice.mov);
             players.push(state.current_player());
@@ -203,8 +200,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
 
     fn make_handle<'a>(&'a self, node: &'a SearchNode<Spec>, tld: &'a mut ThreadData<Spec>)
             -> SearchHandle<'a, Spec> {
-        let global_data = &self.global_data;
-        SearchHandle {node, tld, global_data}
+        SearchHandle {node, tld, manager: &self.manager}
     }
 
     pub fn root_state(&self) -> &Spec::State {
@@ -260,7 +256,7 @@ impl<'a, Spec: MCTS> NodeHandle<'a, Spec> {
 pub struct SearchHandle<'a, Spec: 'a + MCTS> {
     node: &'a SearchNode<Spec>,
     tld: &'a mut ThreadData<Spec>,
-    global_data: &'a Spec::GlobalData,
+    manager: &'a Spec,
 }
 
 impl<'a, Spec: MCTS> SearchHandle<'a, Spec> {
@@ -270,7 +266,7 @@ impl<'a, Spec: MCTS> SearchHandle<'a, Spec> {
     pub fn thread_local_data(&mut self) -> &mut ThreadData<Spec> {
         self.tld
     }
-    pub fn global_data(&self) -> &'a Spec::GlobalData {
-        self.global_data
+    pub fn mcts(&self) -> &'a Spec {
+        self.manager
     }
 }

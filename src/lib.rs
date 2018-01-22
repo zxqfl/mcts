@@ -7,6 +7,12 @@
 //! use mcts::*;
 //! use mcts::tree_policy::*;
 //! 
+//! // A really simple game. There's one player and one number. In each move the player can
+//! // increase or decrease the number. The player's score is the number.
+//! // The game ends when the number reaches 100.
+//! // 
+//! // The best strategy is to increase the number at every step.
+//!
 //! #[derive(Clone, Debug, PartialEq)]
 //! struct CountingGame(i64);
 //! 
@@ -63,14 +69,14 @@
 //!     type State = CountingGame;
 //!     type Eval = MyEvaluator;
 //!     type NodeData = ();
-//!     type GlobalData = ();
 //!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
 //! }
 //! 
 //! let game = CountingGame(0);
-//! let mut mcts = MCTSManager::new(game, MyMCTS, UCTPolicy::new(0.5), MyEvaluator);
-//! mcts.playout_n(10000);
+//! let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(0.5));
+//! mcts.playout_n_parallel(100000, 4);
+//! mcts.tree().print_moves();
 //! assert_eq!(mcts.principal_variation(5),
 //!     vec![Move::Add, Move::Add, Move::Add, Move::Add, Move::Add]);
 //! assert_eq!(mcts.principal_variation_states(5),
@@ -102,7 +108,6 @@ pub trait MCTS: Sized + Sync {
     type Eval: Evaluator<Self>;
     type TreePolicy: TreePolicy<Self>;
     type NodeData: Default + Sync;
-    type GlobalData: Default + Sync;
     type ExtraThreadData;
 
     fn virtual_loss(&self) -> i64 {
@@ -125,16 +130,27 @@ pub trait MCTS: Sized + Sync {
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
 }
 
-#[derive(Default)]
 pub struct ThreadData<Spec: MCTS> {
-    pub policy_data: <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::ThreadLocalData,
+    pub policy_data: TreePolicyThreadData<Spec>,
     pub extra_data: Spec::ExtraThreadData,
 }
+
+impl<Spec: MCTS> Default for ThreadData<Spec>
+    where TreePolicyThreadData<Spec>: Default, Spec::ExtraThreadData: Default
+{
+    fn default() -> Self {
+        Self {
+            policy_data: Default::default(),
+            extra_data: Default::default(),
+        }
+    }
+} 
 
 pub type MoveEvaluation<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::MoveEvaluation;
 pub type StateEvaluation<Spec> = <<Spec as MCTS>::Eval as Evaluator<Spec>>::StateEvaluation;
 pub type Move<Spec> = <<Spec as MCTS>::State as GameState>::Move;
 pub type Player<Spec> = <<Spec as MCTS>::State as GameState>::Player;
+pub type TreePolicyThreadData<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::ThreadLocalData;
 
 pub trait GameState: Clone {
     type Move: Sync + Clone;
@@ -170,7 +186,7 @@ pub struct MCTSManager<Spec: MCTS> {
 }
 
 impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
-    pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
+    pub fn new(state: Spec::State, manager: Spec, eval: Spec::Eval, tree_policy: Spec::TreePolicy)
             -> Self {
         let search_tree = SearchTree::new(state, manager, tree_policy, eval);
         let single_threaded_tld = None;
@@ -216,6 +232,31 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
             manager: self,
             stop_signal,
             threads,
+        }
+    }
+    pub fn into_playout_parallel_async(self, num_threads: usize) -> AsyncSearchOwned<Spec> {
+        assert!(num_threads != 0);
+        let self_box = Box::new(self);
+        let stop_signal = Arc::new(AtomicBool::new(false));
+        let threads = (0..num_threads).map(|_| {
+            let stop_signal = stop_signal.clone();
+            let search_tree = &self_box.search_tree;
+            unsafe {
+                crossbeam::spawn_unsafe(move || {
+                    let mut tld = Default::default();
+                    loop {
+                        if stop_signal.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        search_tree.playout(&mut tld);
+                    }
+                })
+            }
+        }).collect();
+        AsyncSearchOwned {
+            manager: Some(self_box),
+            stop_signal,
+            threads
         }
     }
     pub fn playout_parallel_for(&mut self, duration: Duration, num_threads: usize) {
@@ -264,14 +305,16 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
 
 #[must_use]
 pub struct AsyncSearch<'a, Spec: 'a + MCTS> {
+    #[allow(dead_code)]
     manager: &'a mut MCTSManager<Spec>,
     stop_signal: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
 }
 
 impl<'a, Spec: MCTS> AsyncSearch<'a, Spec> {
-    pub fn halt(self) -> &'a mut MCTSManager<Spec> {
-        self.manager
+    pub fn halt(self) {}
+    pub fn num_threads(&self) -> usize {
+        self.threads.len()
     }
 }
 
@@ -280,6 +323,46 @@ impl<'a, Spec: MCTS> Drop for AsyncSearch<'a, Spec> {
         self.stop_signal.store(true, Ordering::SeqCst);
         for t in self.threads.drain(..) {
             t.join().unwrap();
+        }
+    }
+}
+
+#[must_use]
+pub struct AsyncSearchOwned<Spec: MCTS> {
+    manager: Option<Box<MCTSManager<Spec>>>,
+    stop_signal: Arc<AtomicBool>,
+    threads: Vec<JoinHandle<()>>,
+}
+
+impl<Spec: MCTS> AsyncSearchOwned<Spec> {
+    fn stop_threads(&mut self) {
+        self.stop_signal.store(true, Ordering::SeqCst);
+        for t in self.threads.drain(..) {
+            t.join().unwrap();
+        }
+    }
+    pub fn halt(mut self) -> MCTSManager<Spec> {
+        self.stop_threads();
+        *self.manager.take().unwrap()
+    }
+    pub fn num_threads(&self) -> usize {
+        self.threads.len()
+    }
+}
+
+impl<Spec: MCTS> Drop for AsyncSearchOwned<Spec> {
+    fn drop(&mut self) {
+        self.stop_threads();
+    }
+}
+
+impl<Spec: MCTS> From<MCTSManager<Spec>> for AsyncSearchOwned<Spec> {
+    /// An `MCTSManager` is an `AsyncSearchOwned` with zero threads searching.
+    fn from(m: MCTSManager<Spec>) -> Self {
+        Self {
+            manager: Some(Box::new(m)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            threads: Vec::new(),
         }
     }
 }

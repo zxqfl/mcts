@@ -93,6 +93,9 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for AlphaGoPolicy
             let child_visits = mov.visits();
             let adj_child_visits = (child_visits + 1) as f64;
             let policy_evaln = *mov.move_evaluation() as f64;
+            assert!(policy_evaln >= 0.0,
+                "Move evaluation is {} (must be non-negative)",
+                policy_evaln);
             (sum_rewards + self.exploration_constant * policy_evaln * sqrt_total_visits)
                 / adj_child_visits
         }).unwrap()

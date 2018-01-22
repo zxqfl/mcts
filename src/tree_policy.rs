@@ -13,6 +13,7 @@ pub trait TreePolicy<Spec: MCTS<TreePolicy=Self>>: Sync + Sized {
         where MoveIter: Iterator<Item=&'a MoveInfo<Spec>> + Clone;
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct UCTPolicy {
     exploration_constant: f64,
 }
@@ -30,17 +31,13 @@ impl UCTPolicy {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct AlphaGoPolicy {
     exploration_constant: f64,
 }
 
 impl AlphaGoPolicy {
-    /// Creates a new policy with an exploration constant of 5, as in the original AlphaGo paper.
-    pub fn new() -> Self {
-        Self::with_exploration_constant(5.0)
-    }
-
-    pub fn with_exploration_constant(exploration_constant: f64) -> Self {
+    pub fn new(exploration_constant: f64) -> Self {
         assert!(exploration_constant > 0.0,
             "exploration constant is {} (must be positive)",
             exploration_constant);

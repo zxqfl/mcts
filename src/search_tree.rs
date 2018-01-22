@@ -97,6 +97,9 @@ fn create_node<Spec: MCTS>(eval: &Spec::Eval, state: &Spec::State,
         handle: Option<SearchHandle<Spec>>) -> SearchNode<Spec> {
     let moves = state.available_moves();
     let (move_eval, state_eval) = eval.evaluate_new_state(&state, &moves, handle);
+    assert!(move_eval.len() == moves.len(),
+        "Evaluator was given {} moves but produced {} move evaluations",
+        moves.len(), move_eval.len());
     let moves = moves.into_iter()
         .zip(move_eval.into_iter())
         .map(|(m, e)| MoveInfo::new(m, e))

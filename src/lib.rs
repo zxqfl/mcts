@@ -38,7 +38,7 @@
 //!     }
 //! }
 //! 
-//! struct MyEvaluator {}
+//! struct MyEvaluator;
 //! 
 //! impl Evaluator<MyMCTS> for MyEvaluator {
 //!     type StateEvaluation = i64;
@@ -57,7 +57,7 @@
 //! }
 //! 
 //! #[derive(Default)]
-//! struct MyMCTS {}
+//! struct MyMCTS;
 //! 
 //! impl MCTS for MyMCTS {
 //!     type State = CountingGame;
@@ -69,7 +69,7 @@
 //! }
 //! 
 //! let game = CountingGame(0);
-//! let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(0.5), MyEvaluator{});
+//! let mut mcts = MCTSManager::new(game, MyMCTS, UCTPolicy::new(0.5), MyEvaluator);
 //! mcts.playout_n(10000);
 //! assert_eq!(mcts.principal_variation(5),
 //!     vec![Move::Add, Move::Add, Move::Add, Move::Add, Move::Add]);

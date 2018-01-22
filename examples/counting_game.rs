@@ -36,7 +36,7 @@ impl GameState for CountingGame {
     }
 }
 
-struct MyEvaluator {}
+struct MyEvaluator;
 
 impl Evaluator<MyMCTS> for MyEvaluator {
     type StateEvaluation = i64;
@@ -57,7 +57,7 @@ impl Evaluator<MyMCTS> for MyEvaluator {
 }
 
 #[derive(Default)]
-struct MyMCTS {}
+struct MyMCTS;
 
 impl MCTS for MyMCTS {
     type State = CountingGame;
@@ -75,7 +75,7 @@ impl MCTS for MyMCTS {
 fn main() {
     loop {
         let game = CountingGame(0);
-        let mut mcts = MCTSManager::new(game, MyMCTS{}, UCTPolicy::new(50.0), MyEvaluator{});
+        let mut mcts = MCTSManager::new(game, MyMCTS, UCTPolicy::new(50.0), MyEvaluator);
         mcts.playout_n(100000);
         let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
         println!("Principal variation: {:?}", pv);

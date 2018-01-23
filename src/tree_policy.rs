@@ -11,6 +11,7 @@ pub trait TreePolicy<Spec: MCTS<TreePolicy=Self>>: Sync + Sized {
 
     fn choose_child<'a, MoveIter>(&self, moves: MoveIter, handle: SearchHandle<Spec>) -> &'a MoveInfo<Spec>
         where MoveIter: Iterator<Item=&'a MoveInfo<Spec>> + Clone;
+    fn validate_evaluations(&self, _evalns: &[Self::MoveEvaluation]) {}
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -90,12 +91,21 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for AlphaGoPolicy
             let child_visits = mov.visits();
             let adj_child_visits = (child_visits + 1) as f64;
             let policy_evaln = *mov.move_evaluation() as f64;
-            assert!(policy_evaln >= 0.0,
-                "Move evaluation is {} (must be non-negative)",
-                policy_evaln);
             (sum_rewards + self.exploration_constant * policy_evaln * sqrt_total_visits)
                 / adj_child_visits
         }).unwrap()
+    }
+
+    fn validate_evaluations(&self, evalns: &[f64]) {
+        for &x in evalns {
+            assert!(x >= -1e-6,
+                "Move evaluation is {} (must be non-negative)",
+                x);
+        }
+        let evaln_sum: f64 = evalns.iter().sum();
+        assert!((evaln_sum - 1.0).abs() < 0.1,
+            "Sum of evaluations is {} (should sum to 1)",
+            evaln_sum);
     }
 }
 

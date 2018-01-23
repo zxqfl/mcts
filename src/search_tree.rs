@@ -127,10 +127,11 @@ impl<Spec: MCTS> Drop for MoveInfo<Spec> {
     }
 }
 
-fn create_node<Spec: MCTS>(eval: &Spec::Eval, state: &Spec::State,
+fn create_node<Spec: MCTS>(eval: &Spec::Eval, policy: &Spec::TreePolicy, state: &Spec::State,
         handle: Option<SearchHandle<Spec>>) -> SearchNode<Spec> {
     let moves = state.available_moves();
     let (move_eval, state_eval) = eval.evaluate_new_state(&state, &moves, handle);
+    policy.validate_evaluations(&move_eval);
     assert!(move_eval.len() == moves.len(),
         "Evaluator was given {} moves but produced {} move evaluations",
         moves.len(), move_eval.len());
@@ -144,7 +145,7 @@ fn create_node<Spec: MCTS>(eval: &Spec::Eval, state: &Spec::State,
 impl<Spec: MCTS> SearchTree<Spec> {
     pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
             -> Self {
-        let root_node = create_node(&eval, &state, None);
+        let root_node = create_node(&eval, &tree_policy, &state, None);
         Self {
             root_state: state,
             root_node,
@@ -183,7 +184,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
                 child = choice.child.load(Ordering::Acquire) as *const SearchNode<Spec>;
                 did_we_create = false;
                 if child == null() {
-                    let new_child = create_node(&self.eval, &state,
+                    let new_child = create_node(&self.eval, &self.tree_policy, &state,
                         Some(self.make_handle(node, tld)));
                     let new_child = Box::into_raw(Box::new(new_child)); // move to heap
                     let result = choice.child.compare_and_swap(null_mut(), new_child, Ordering::Release);

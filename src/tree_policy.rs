@@ -14,7 +14,7 @@ pub trait TreePolicy<Spec: MCTS<TreePolicy=Self>>: Sync + Sized {
     fn validate_evaluations(&self, _evalns: &[Self::MoveEvaluation]) {}
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct UCTPolicy {
     exploration_constant: f64,
 }
@@ -32,9 +32,12 @@ impl UCTPolicy {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+const RECIPROCAL_TABLE_LEN: usize = 128;
+
+#[derive(Clone, Debug)]
 pub struct AlphaGoPolicy {
     exploration_constant: f64,
+    reciprocals: Vec<f64>,
 }
 
 impl AlphaGoPolicy {
@@ -42,11 +45,24 @@ impl AlphaGoPolicy {
         assert!(exploration_constant > 0.0,
             "exploration constant is {} (must be positive)",
             exploration_constant);
-        Self {exploration_constant}
+        let reciprocals = (0..RECIPROCAL_TABLE_LEN)
+            .map(|x| 1.0 / x as f64)
+            .collect();
+        Self {exploration_constant, reciprocals}
     }
 
     pub fn exploration_constant(&self) -> f64 {
         self.exploration_constant
+    }
+
+    fn reciprocal(&self, x: usize) -> f64 {
+        if x < RECIPROCAL_TABLE_LEN {
+            unsafe {
+                *self.reciprocals.get_unchecked(x)
+            }
+        } else {
+            1.0 / x as f64
+        }
     }
 }
 
@@ -86,13 +102,13 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for AlphaGoPolicy
     {
         let total_visits = moves.clone().map(|x| x.visits()).sum::<u64>();
         let sqrt_total_visits = (total_visits as f64).sqrt();
+        let explore_coef = self.exploration_constant * sqrt_total_visits;
         handle.thread_local_data().policy_data.select_by_key(moves, |mov| {
             let sum_rewards = mov.sum_rewards() as f64;
             let child_visits = mov.visits();
-            let adj_child_visits = (child_visits + 1) as f64;
+            let adj_child_visits = child_visits + 1;
             let policy_evaln = *mov.move_evaluation() as f64;
-            (sum_rewards + self.exploration_constant * policy_evaln * sqrt_total_visits)
-                / adj_child_visits
+            (sum_rewards + explore_coef * policy_evaln) * self.reciprocal(adj_child_visits as usize)
         }).unwrap()
     }
 

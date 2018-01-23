@@ -301,6 +301,9 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
         states
     }
     pub fn tree(&self) -> &SearchTree<Spec> {&self.search_tree}
+    pub fn best_move(&self) -> Option<Move<Spec>> {
+        self.principal_variation(1).get(0).map(|x| x.clone())
+    }
 }
 
 #[must_use]

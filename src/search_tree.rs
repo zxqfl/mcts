@@ -15,7 +15,8 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
 use std::ptr::{null, null_mut};
 use smallvec::SmallVec;
-use std::fmt::Debug;
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
 
 use tree_policy::TreePolicy;
 
@@ -79,6 +80,39 @@ impl<Spec: MCTS> MoveInfo<Spec> {
 
     pub fn sum_rewards(&self) -> i64 {
         self.sum_evaluations.load(Ordering::Relaxed) as i64
+    }
+
+    pub fn child(&self) -> Option<NodeHandle<Spec>> {
+        let ptr = self.child.load(Ordering::Relaxed);
+        if ptr == null_mut() {
+            None
+        } else {
+            unsafe {Some(NodeHandle {node: &*ptr})}
+        }
+    }
+}
+
+impl<Spec: MCTS> Display for MoveInfo<Spec> where Move<Spec>: Display {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if self.visits() == 0 {
+            write!(f, "{} [0 visits]", self.mov)
+        } else {
+            write!(f, "{} [{} visit{}] [{} avg reward]",
+                self.mov, self.visits(), if self.visits() == 1 {""} else {"s"},
+                self.sum_rewards() as f64 / self.visits() as f64)
+        }
+    }
+}
+
+impl<Spec: MCTS> Debug for MoveInfo<Spec> where Move<Spec>: Debug {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if self.visits() == 0 {
+            write!(f, "{:?} [0 visits]", self.mov)
+        } else {
+            write!(f, "{:?} [{} visit{}] [{} avg reward]",
+                self.mov, self.visits(), if self.visits() == 1 {""} else {"s"},
+                self.sum_rewards() as f64 / self.visits() as f64)
+        }
     }
 }
 
@@ -209,6 +243,11 @@ impl<Spec: MCTS> SearchTree<Spec> {
     pub fn root_state(&self) -> &Spec::State {
         &self.root_state
     }
+    pub fn root_node(&self) -> NodeHandle<Spec> {
+        NodeHandle {
+            node: &self.root_node
+        }
+    }
 
     pub fn principal_variation(&self, num_moves: usize) -> Vec<Move<Spec>> {
         let mut result = Vec::new();
@@ -230,17 +269,21 @@ impl<Spec: MCTS> SearchTree<Spec> {
 }
 
 impl<Spec: MCTS> SearchTree<Spec> where Move<Spec>: Debug {
-    pub fn print_moves(&self) {
+    pub fn debug_moves(&self) {
         let mut moves: Vec<&MoveInfo<Spec>> = self.root_node.moves.iter().collect();
         moves.sort_by_key(|x| -(x.visits() as i64));
         for mov in moves {
-            if mov.visits() == 0 {
-                println!("{:?} [0 visits]", mov.mov);
-            } else {
-                println!("{:?} [{} visit{}] [{} avg reward]",
-                    mov.mov, mov.visits(), if mov.visits() == 1 {""} else {"s"},
-                    mov.sum_rewards() as f64 / mov.visits() as f64);
-            }
+            println!("{:?}", mov);
+        }
+    }
+}
+
+impl<Spec: MCTS> SearchTree<Spec> where Move<Spec>: Display {
+    pub fn display_moves(&self) {
+        let mut moves: Vec<&MoveInfo<Spec>> = self.root_node.moves.iter().collect();
+        moves.sort_by_key(|x| -(x.visits() as i64));
+        for mov in moves {
+            println!("{}", mov);
         }
     }
 }
@@ -253,6 +296,23 @@ pub struct NodeHandle<'a, Spec: 'a + MCTS> {
 impl<'a, Spec: MCTS> NodeHandle<'a, Spec> {
     pub fn data(&self) -> &'a Spec::NodeData {
         &self.node.data
+    }
+    pub fn moves(&self) -> Moves<Spec> {
+        Moves {
+            iter: self.node.moves.iter()
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Moves<'a, Spec: 'a + MCTS> {
+    iter: std::slice::Iter<'a, MoveInfo<Spec>>,
+}
+
+impl<'a, Spec: 'a + MCTS> Iterator for Moves<'a, Spec> {
+    type Item = &'a MoveInfo<Spec>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }
 

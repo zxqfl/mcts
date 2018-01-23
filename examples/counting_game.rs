@@ -78,5 +78,5 @@ fn main() {
     let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
     println!("Principal variation: {:?}", pv);
     println!("Evaluation of moves:");
-    mcts.tree().print_moves();
+    mcts.tree().debug_moves();
 }

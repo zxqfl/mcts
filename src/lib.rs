@@ -76,7 +76,7 @@
 //! let game = CountingGame(0);
 //! let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(0.5));
 //! mcts.playout_n_parallel(100000, 4);
-//! mcts.tree().print_moves();
+//! mcts.tree().debug_moves();
 //! assert_eq!(mcts.principal_variation(5),
 //!     vec![Move::Add, Move::Add, Move::Add, Move::Add, Move::Add]);
 //! assert_eq!(mcts.principal_variation_states(5),

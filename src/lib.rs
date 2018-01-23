@@ -116,6 +116,9 @@ pub trait MCTS: Sized + Sync {
     fn visits_before_expansion(&self) -> u64 {
         1
     }
+    fn node_limit(&self) -> usize {
+        std::usize::MAX
+    }
     fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
         children.into_iter().max_by_key(|child| child.visits()).unwrap()
     }
@@ -183,6 +186,7 @@ pub struct MCTSManager<Spec: MCTS> {
     search_tree: SearchTree<Spec>,
     // thread local data when we have no asynchronous workers
     single_threaded_tld: Option<ThreadData<Spec>>,
+    print_on_playout_error: bool,
 }
 
 impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
@@ -190,7 +194,12 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
             -> Self {
         let search_tree = SearchTree::new(state, manager, tree_policy, eval);
         let single_threaded_tld = None;
-        Self {search_tree, single_threaded_tld}
+        Self {search_tree, single_threaded_tld, print_on_playout_error: true}
+    }
+
+    pub fn print_on_playout_error(&mut self, v: bool) -> &mut Self {
+        self.print_on_playout_error = v;
+        self
     }
 
     pub fn playout(&mut self) {
@@ -210,22 +219,32 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
             self.playout();
         }
     }
+    unsafe fn spawn_worker_thread(&self, stop_signal: Arc<AtomicBool>) -> JoinHandle<()> {
+        let search_tree = &self.search_tree;
+        let print_on_playout_error = self.print_on_playout_error;
+        crossbeam::spawn_unsafe(move || {
+            let mut tld = Default::default();
+            loop {
+                if stop_signal.load(Ordering::SeqCst) {
+                    break;
+                }
+                if !search_tree.playout(&mut tld) {
+                    if print_on_playout_error {
+                        eprintln!("Node limit of {} reached; cancelling search",
+                            search_tree.spec().node_limit());
+                    }
+                    break;
+                }
+            }
+        })
+    }
     pub fn playout_parallel_async<'a>(&'a mut self, num_threads: usize) -> AsyncSearch<'a, Spec> {
         assert!(num_threads != 0);
         let stop_signal = Arc::new(AtomicBool::new(false));
         let threads = (0..num_threads).map(|_| {
+            let stop_signal = stop_signal.clone();
             unsafe {
-                let stop_signal = stop_signal.clone();
-                let search_tree = &self.search_tree;
-                crossbeam::spawn_unsafe(move || {
-                    let mut tld = Default::default();
-                    loop {
-                        if stop_signal.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        search_tree.playout(&mut tld);
-                    }
-                })
+                self.spawn_worker_thread(stop_signal)
             }
         }).collect();
         AsyncSearch {
@@ -240,17 +259,8 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
         let stop_signal = Arc::new(AtomicBool::new(false));
         let threads = (0..num_threads).map(|_| {
             let stop_signal = stop_signal.clone();
-            let search_tree = &self_box.search_tree;
             unsafe {
-                crossbeam::spawn_unsafe(move || {
-                    let mut tld = Default::default();
-                    loop {
-                        if stop_signal.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        search_tree.playout(&mut tld);
-                    }
-                })
+                self_box.spawn_worker_thread(stop_signal)
             }
         }).collect();
         AsyncSearchOwned {

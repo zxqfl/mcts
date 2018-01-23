@@ -28,6 +28,7 @@ pub struct SearchTree<Spec: MCTS> {
     tree_policy: Spec::TreePolicy,
     eval: Spec::Eval,
     manager: Spec,
+    num_nodes: AtomicUsize,
 }
 
 pub struct MoveInfo<Spec: MCTS> {
@@ -152,11 +153,21 @@ impl<Spec: MCTS> SearchTree<Spec> {
             manager,
             tree_policy,
             eval,
+            num_nodes: AtomicUsize::new(1),
         }
     }
 
-    pub fn playout(&self, tld: &mut ThreadData<Spec>) {
+    pub fn spec(&self) -> &Spec {
+        &self.manager
+    }
+
+    pub fn playout(&self, tld: &mut ThreadData<Spec>) -> bool {
         const LARGE_DEPTH: usize = 64;
+        let total_nodes = self.num_nodes.fetch_add(1, Ordering::Relaxed);
+        if total_nodes >= self.manager.node_limit() {
+            self.num_nodes.fetch_sub(1, Ordering::Relaxed);
+            return false;
+        }
         let mut state = self.root_state.clone();
         let mut path: SmallVec<[&MoveInfo<Spec>; LARGE_DEPTH]> = SmallVec::new();
         let mut players: SmallVec<[Player<Spec>; LARGE_DEPTH]> = SmallVec::new();
@@ -185,6 +196,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
                         // compare and swap was successful
                         did_we_create = true;
                         child = new_child;
+                        self.num_nodes.fetch_add(1, Ordering::Relaxed);
                         break;
                     } else {
                         // someone else expanded this child before we did
@@ -204,7 +216,9 @@ impl<Spec: MCTS> SearchTree<Spec> {
                 break;
             }
         }
+        self.num_nodes.fetch_sub(1, Ordering::Relaxed);
         self.finish_playout(did_we_create, &state, &path, &players, tld, node);
+        true
     }
 
     fn finish_playout(&self, did_we_create: bool, state: &Spec::State,

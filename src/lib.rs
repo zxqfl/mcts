@@ -230,7 +230,7 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
                 }
                 if !search_tree.playout(&mut tld) {
                     if print_on_playout_error {
-                        eprintln!("Node limit of {} reached; cancelling search",
+                        eprintln!("Node limit of {} reached. Halting search.",
                             search_tree.spec().node_limit());
                     }
                     break;

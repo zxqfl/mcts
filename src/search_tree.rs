@@ -163,22 +163,15 @@ impl<Spec: MCTS> SearchTree<Spec> {
         let mut did_we_create = false;
         let mut node = &self.root_node;
         loop {
-            // if path.len() == LARGE_DEPTH {
-            //     for i in 0..(LARGE_DEPTH - 1) {
-            //         assert!(path[i] != path[LARGE_DEPTH - 1],
-            //             "Cycle detected: disable transposition table \
-            //             or make the game state acyclic");
-            //     }
-            // }
             if node.moves.len() == 0 {
                 break;
             }
             let choice = self.tree_policy.choose_child(node.moves.iter(), self.make_handle(node, tld));
             let child_visits = choice.visits.fetch_add(1, Ordering::Relaxed) + 1;
             choice.sum_evaluations.fetch_sub(self.manager.virtual_loss() as isize, Ordering::Relaxed);
+            players.push(state.current_player());
             path.push(choice);
             state.make_move(&choice.mov);
-            players.push(state.current_player());
             let mut child;
             loop {
                 child = choice.child.load(Ordering::Acquire) as *const SearchNode<Spec>;

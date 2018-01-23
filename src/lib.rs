@@ -314,11 +314,43 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
     pub fn best_move(&self) -> Option<Move<Spec>> {
         self.principal_variation(1).get(0).map(|x| x.clone())
     }
+    pub fn perf_test<F>(&mut self, num_threads: usize, mut f: F) where F: FnMut(usize) {
+        let search = self.playout_parallel_async(num_threads);
+        for _ in 0..5 {
+            let n1 = search.manager.search_tree.node_count();
+            std::thread::sleep(Duration::from_secs(1));
+            let n2 = search.manager.search_tree.node_count();
+            let diff = if n2 > n1 {
+                n2 - n1
+            } else {
+                0
+            };
+            f(diff);
+        }
+    }
+    pub fn perf_test_to_stderr(&mut self, num_threads: usize) {
+        self.perf_test(num_threads, |x| eprintln!("{} nodes/sec", thousands_separate(x)));
+    }
+    pub fn reset(self) -> Self {
+        Self {
+            search_tree: self.search_tree.reset(),
+            print_on_playout_error: self.print_on_playout_error,
+            single_threaded_tld: None,
+        }
+    }
+}
+
+// https://stackoverflow.com/questions/26998485/rust-print-format-number-with-thousand-separator
+fn thousands_separate(x: usize) -> String {
+    let s = format!("{}", x);
+    let bytes: Vec<_> = s.bytes().rev().collect();
+    let chunks: Vec<_> = bytes.chunks(3).map(|chunk| String::from_utf8(chunk.to_vec()).unwrap()).collect();
+    let result: Vec<_> = chunks.join(",").bytes().rev().collect();
+    String::from_utf8(result).unwrap()
 }
 
 #[must_use]
 pub struct AsyncSearch<'a, Spec: 'a + MCTS> {
-    #[allow(dead_code)]
     manager: &'a mut MCTSManager<Spec>,
     stop_signal: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,

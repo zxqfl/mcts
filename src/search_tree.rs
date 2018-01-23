@@ -157,8 +157,16 @@ impl<Spec: MCTS> SearchTree<Spec> {
         }
     }
 
+    pub fn reset(self) -> Self {
+        Self::new(self.root_state, self.manager, self.tree_policy, self.eval)
+    }
+
     pub fn spec(&self) -> &Spec {
         &self.manager
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.num_nodes.load(Ordering::SeqCst)
     }
 
     pub fn playout(&self, tld: &mut ThreadData<Spec>) -> bool {

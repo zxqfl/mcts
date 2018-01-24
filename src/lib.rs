@@ -152,15 +152,17 @@ impl<Spec: MCTS> Default for ThreadData<Spec>
 pub type MoveEvaluation<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::MoveEvaluation;
 pub type StateEvaluation<Spec> = <<Spec as MCTS>::Eval as Evaluator<Spec>>::StateEvaluation;
 pub type Move<Spec> = <<Spec as MCTS>::State as GameState>::Move;
+pub type MoveList<Spec> = <<Spec as MCTS>::State as GameState>::MoveList;
 pub type Player<Spec> = <<Spec as MCTS>::State as GameState>::Player;
 pub type TreePolicyThreadData<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::ThreadLocalData;
 
 pub trait GameState: Clone {
     type Move: Sync + Clone;
     type Player: Sync;
+    type MoveList: std::iter::IntoIterator<Item=Self::Move>;
 
     fn current_player(&self) -> Self::Player;
-    fn available_moves(&self) -> Vec<Self::Move>;
+    fn available_moves(&self) -> Self::MoveList;
     fn make_move(&mut self, mov: &Self::Move);
 }
 
@@ -168,7 +170,7 @@ pub trait Evaluator<Spec: MCTS>: Sync {
     type StateEvaluation: Sync;
 
     fn evaluate_new_state(&self,
-        state: &Spec::State, moves: &[Move<Spec>],
+        state: &Spec::State, moves: &MoveList<Spec>,
         handle: Option<SearchHandle<Spec>>)
         -> (Vec<MoveEvaluation<Spec>>, Self::StateEvaluation);
 

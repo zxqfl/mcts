@@ -46,7 +46,11 @@ impl AlphaGoPolicy {
             "exploration constant is {} (must be positive)",
             exploration_constant);
         let reciprocals = (0..RECIPROCAL_TABLE_LEN)
-            .map(|x| 1.0 / x as f64)
+            .map(|x| if x == 0 {
+                1.0
+            } else {
+                1.0 / x as f64
+            })
             .collect();
         Self {exploration_constant, reciprocals}
     }
@@ -106,9 +110,8 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for AlphaGoPolicy
         handle.thread_local_data().policy_data.select_by_key(moves, |mov| {
             let sum_rewards = mov.sum_rewards() as f64;
             let child_visits = mov.visits();
-            let adj_child_visits = child_visits + 1;
             let policy_evaln = *mov.move_evaluation() as f64;
-            (sum_rewards + explore_coef * policy_evaln) * self.reciprocal(adj_child_visits as usize)
+            (sum_rewards + explore_coef * policy_evaln) * self.reciprocal(child_visits as usize)
         }).unwrap()
     }
 

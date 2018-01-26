@@ -47,7 +47,7 @@ impl AlphaGoPolicy {
             exploration_constant);
         let reciprocals = (0..RECIPROCAL_TABLE_LEN)
             .map(|x| if x == 0 {
-                1.0
+                2.0
             } else {
                 1.0 / x as f64
             })
@@ -104,7 +104,7 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for AlphaGoPolicy
     fn choose_child<'a, MoveIter>(&self, moves: MoveIter, mut handle: SearchHandle<Spec>) -> &'a MoveInfo<Spec>
         where MoveIter: Iterator<Item=&'a MoveInfo<Spec>> + Clone
     {
-        let total_visits = moves.clone().map(|x| x.visits()).sum::<u64>();
+        let total_visits = moves.clone().map(|x| x.visits()).sum::<u64>() + 1;
         let sqrt_total_visits = (total_visits as f64).sqrt();
         let explore_coef = self.exploration_constant * sqrt_total_visits;
         handle.thread_local_data().policy_data.select_by_key(moves, |mov| {

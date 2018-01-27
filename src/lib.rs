@@ -198,9 +198,9 @@ pub struct MCTSManager<Spec: MCTS> {
 }
 
 impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
-    pub fn new(state: Spec::State, manager: Spec, eval: Spec::Eval, tree_policy: Spec::TreePolicy)
-            -> Self {
-        let search_tree = SearchTree::new(state, manager, tree_policy, eval);
+    pub fn new(state: Spec::State, manager: Spec, eval: Spec::Eval, tree_policy: Spec::TreePolicy,
+            table: Spec::TranspositionTable) -> Self {
+        let search_tree = SearchTree::new(state, manager, tree_policy, eval, table);
         let single_threaded_tld = None;
         Self {search_tree, single_threaded_tld, print_on_playout_error: true}
     }

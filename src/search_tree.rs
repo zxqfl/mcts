@@ -18,6 +18,7 @@ pub struct SearchTree<Spec: MCTS> {
     root_node: SearchNode<Spec>,
     root_state: Spec::State,
     tree_policy: Spec::TreePolicy,
+    table: Spec::TranspositionTable,
     eval: Spec::Eval,
     manager: Spec,
     num_nodes: AtomicUsize,
@@ -133,8 +134,8 @@ fn create_node<Spec: MCTS>(eval: &Spec::Eval, policy: &Spec::TreePolicy, state: 
 }
 
 impl<Spec: MCTS> SearchTree<Spec> {
-    pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval)
-            -> Self {
+    pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval,
+            table: Spec::TranspositionTable) -> Self {
         let root_node = create_node(&eval, &tree_policy, &state, None);
         Self {
             root_state: state,
@@ -142,12 +143,13 @@ impl<Spec: MCTS> SearchTree<Spec> {
             manager,
             tree_policy,
             eval,
+            table,
             num_nodes: AtomicUsize::new(1),
         }
     }
 
     pub fn reset(self) -> Self {
-        Self::new(self.root_state, self.manager, self.tree_policy, self.eval)
+        Self::new(self.root_state, self.manager, self.tree_policy, self.eval, self.table)
     }
 
     pub fn spec(&self) -> &Spec {

@@ -14,6 +14,7 @@ enum Move {
 impl GameState for CountingGame {
     type Move = Move;
     type Player = ();
+    type MoveList = Vec<Self::Move>;
 
     fn current_player(&self) -> Self::Player {
         ()
@@ -41,7 +42,7 @@ struct MyEvaluator;
 impl Evaluator<MyMCTS> for MyEvaluator {
     type StateEvaluation = i64;
 
-    fn evaluate_new_state(&self, state: &CountingGame, moves: &[Move],
+    fn evaluate_new_state(&self, state: &CountingGame, moves: &Vec<Move>,
         _: Option<SearchHandle<MyMCTS>>)
         -> (Vec<()>, i64) {
         (vec![(); moves.len()], state.0)
@@ -65,6 +66,7 @@ impl MCTS for MyMCTS {
     type NodeData = ();
     type ExtraThreadData = ();
     type TreePolicy = UCTPolicy;
+    type TranspositionTable = ();
 
     fn virtual_loss(&self) -> i64 {
         500

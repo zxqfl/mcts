@@ -6,6 +6,7 @@
 //! ```
 //! use mcts::*;
 //! use mcts::tree_policy::*;
+//! use mcts::transposition_table::*;
 //! 
 //! // A really simple game. There's one player and one number. In each move the player can
 //! // increase or decrease the number. The player's score is the number.
@@ -24,11 +25,12 @@
 //! impl GameState for CountingGame {
 //!     type Move = Move;
 //!     type Player = ();
+//!     type MoveList = Vec<Move>;
 //! 
 //!     fn current_player(&self) -> Self::Player {
 //!         ()
 //!     }
-//!     fn available_moves(&self) -> Vec<Self::Move> {
+//!     fn available_moves(&self) -> Vec<Move> {
 //!         let x = self.0;
 //!         if x == 100 {
 //!             vec![]
@@ -44,12 +46,18 @@
 //!     }
 //! }
 //! 
+//! impl TranspositionHash for CountingGame {
+//!     fn hash(&self) -> u64 {
+//!         self.0 as u64
+//!     }
+//! }
+//! 
 //! struct MyEvaluator;
 //! 
 //! impl Evaluator<MyMCTS> for MyEvaluator {
 //!     type StateEvaluation = i64;
 //! 
-//!     fn evaluate_new_state(&self, state: &CountingGame, moves: &[Move],
+//!     fn evaluate_new_state(&self, state: &CountingGame, moves: &Vec<Move>,
 //!         _: Option<SearchHandle<MyMCTS>>)
 //!         -> (Vec<()>, i64) {
 //!         (vec![(); moves.len()], state.0)
@@ -71,14 +79,15 @@
 //!     type NodeData = ();
 //!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
+//!     type TranspositionTable = LossyQuadraticProbingHashTableForMCTS<Self>;
 //! }
 //! 
 //! let game = CountingGame(0);
 //! let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(0.5));
 //! mcts.playout_n_parallel(100000, 4);
 //! mcts.tree().debug_moves();
-//! assert_eq!(mcts.principal_variation(5),
-//!     vec![Move::Add, Move::Add, Move::Add, Move::Add, Move::Add]);
+//! assert_eq!(mcts.principal_variation(50),
+//!     vec![Move::Add; 50]);
 //! assert_eq!(mcts.principal_variation_states(5),
 //!     vec![
 //!         CountingGame(0),
@@ -93,12 +102,15 @@ extern crate crossbeam;
 extern crate smallvec;
 
 mod search_tree;
+mod atomics;
 pub mod tree_policy;
+pub mod transposition_table;
 
 pub use search_tree::*;
 use tree_policy::*;
+use transposition_table::*;
 
-use std::sync::atomic::{AtomicIsize, AtomicBool, Ordering};
+use atomics::*;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -108,6 +120,7 @@ pub trait MCTS: Sized + Sync {
     type Eval: Evaluator<Self>;
     type TreePolicy: TreePolicy<Self>;
     type NodeData: Default + Sync;
+    type TranspositionTable: TranspositionTable<Self>;
     type ExtraThreadData;
 
     fn virtual_loss(&self) -> i64 {
@@ -122,13 +135,6 @@ pub trait MCTS: Sized + Sync {
     fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
         children.into_iter().max_by_key(|child| child.visits()).unwrap()
     }
-
-    // fn add_state_to_transposition_table<'a>(&'a self, _state: &Self::State, _node: NodeHandle<'a, Self>,
-    //     _handle: SearchHandle<Self>) {}
-
-    // fn lookup_transposition_table<'a>(&'a self, _state: &Self::State) -> Option<NodeHandle<'a, Self>> {
-    //     None
-    // }
 
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
 }

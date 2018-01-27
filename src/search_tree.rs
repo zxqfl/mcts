@@ -2,15 +2,7 @@
 
 use std;
 
-#[cfg(not(any(target_pointer_width = "64", feature = "nightly")))]
-compile_error!("If you aren't compiling for 64-bit, you must use the nightly compiler.");
-
-#[cfg(target_pointer_width = "64")]
-type AtomicI64 = std::sync::atomic::AtomicIsize;
-
-#[cfg(not(target_pointer_width = "64"))]
-type AtomicI64 = std::sync::atomic::AtomicI64;
-
+use atomics::*;
 use super::*;
 use std::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
 use std::ptr::{null, null_mut};
@@ -39,7 +31,7 @@ pub struct MoveInfo<Spec: MCTS> {
     sum_evaluations: AtomicI64,
 }
 
-struct SearchNode<Spec: MCTS> {
+pub struct SearchNode<Spec: MCTS> {
     moves: Vec<MoveInfo<Spec>>,
     data: Spec::NodeData,
     evaln: StateEvaluation<Spec>,
@@ -166,6 +158,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
         self.num_nodes.load(Ordering::SeqCst)
     }
 
+    #[inline(never)]
     pub fn playout(&self, tld: &mut ThreadData<Spec>) -> bool {
         const LARGE_DEPTH: usize = 64;
         let total_nodes = self.num_nodes.fetch_add(1, Ordering::Relaxed);
@@ -204,6 +197,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
                         self.num_nodes.fetch_add(1, Ordering::Relaxed);
                         break;
                     } else {
+                        // self.contention_events.fetch_add(1, Ordering::Relaxed);
                         // someone else expanded this child before we did
                         unsafe {
                             Box::from_raw(new_child);
@@ -313,6 +307,14 @@ impl<'a, Spec: MCTS> NodeHandle<'a, Spec> {
     pub fn moves(&self) -> Moves<Spec> {
         Moves {
             iter: self.node.moves.iter()
+        }
+    }
+    pub fn into_raw(&self) -> *const () {
+        self.node as *const _ as *const ()
+    }
+    pub unsafe fn from_raw(ptr: *const ()) -> Self {
+        NodeHandle {
+            node: &*(ptr as *const SearchNode<Spec>)
         }
     }
 }

@@ -49,7 +49,7 @@ pub trait TranspositionHash {
     fn hash(&self) -> u64;
 }
 
-pub struct LossyQuadraticProbingHashTable<K: TranspositionHash, V> {
+pub struct ApproxQuadraticProbingHashTable<K: TranspositionHash, V> {
     arr: Box<[Entry16<K, V>]>,
     capacity: usize,
     mask: usize,
@@ -81,7 +81,7 @@ impl<K: TranspositionHash, V> Clone for Entry16<K, V> {
     }
 }
 
-impl<K: TranspositionHash, V> LossyQuadraticProbingHashTable<K, V> {
+impl<K: TranspositionHash, V> ApproxQuadraticProbingHashTable<K, V> {
     pub fn new(capacity: usize) -> Self {
         assert!(std::mem::size_of::<Entry16<K, V>>() <= 16);
         assert!(capacity.count_ones() == 1, "the capacity must be a power of 2");
@@ -91,11 +91,11 @@ impl<K: TranspositionHash, V> LossyQuadraticProbingHashTable<K, V> {
     }
 }
 
-unsafe impl<K: TranspositionHash, V> Sync for LossyQuadraticProbingHashTable<K, V> {}
-unsafe impl<K: TranspositionHash, V> Send for LossyQuadraticProbingHashTable<K, V> {}
+unsafe impl<K: TranspositionHash, V> Sync for ApproxQuadraticProbingHashTable<K, V> {}
+unsafe impl<K: TranspositionHash, V> Send for ApproxQuadraticProbingHashTable<K, V> {}
 
-pub type LossyQuadraticProbingHashTableForMCTS<Spec> =
-         LossyQuadraticProbingHashTable<<Spec as MCTS>::State, SearchNode<Spec>>;
+pub type ApproxTable<Spec> =
+         ApproxQuadraticProbingHashTable<<Spec as MCTS>::State, SearchNode<Spec>>;
 
 fn get_or_write<'a, V>(ptr: &AtomicPtr<V>, v: &'a V) -> Option<&'a V> {
     let result = ptr.compare_and_swap(
@@ -115,7 +115,7 @@ fn convert<'a, V>(ptr: *const V) -> Option<&'a V> {
 
 const PROBE_LIMIT: usize = 16;
 
-unsafe impl<Spec> TranspositionTable<Spec> for LossyQuadraticProbingHashTableForMCTS<Spec>
+unsafe impl<Spec> TranspositionTable<Spec> for ApproxTable<Spec>
     where Spec::State: TranspositionHash, Spec: MCTS
 {
     fn insert<'a>(&'a self, key: &Spec::State, value: &'a SearchNode<Spec>,

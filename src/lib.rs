@@ -79,7 +79,7 @@
 //!     type NodeData = ();
 //!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
-//!     type TranspositionTable = LossyQuadraticProbingHashTableForMCTS<Self>;
+//!     type TranspositionTable = ApproxTable<Self>;
 //!
 //!     fn virtual_loss(&self) -> i64 {
 //!         100

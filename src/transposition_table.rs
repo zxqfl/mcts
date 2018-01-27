@@ -2,14 +2,24 @@ use super::*;
 use search_tree::*;
 use atomics::*;
 
-pub trait TranspositionTable<Spec: MCTS>: Sync + Sized {
+pub unsafe trait TranspositionTable<Spec: MCTS>: Sync + Sized {
+    /// *If this function inserts a value, it must return `None`.* Failure to follow
+    /// this rule will lead to memory safety violation.
+    ///
     /// Attempts to insert a key/value pair.
     ///
-    /// If the key is not present, the table *may* insert it and
-    /// *should almost always* return `None`.
+    /// If the key is not present, the table *may* insert it. If the table does
+    /// not insert it, the table may either return `None` or a reference to another
+    /// value existing in the table. (The latter is allowed so that the table doesn't
+    /// necessarily need to handle hash collisions, but it will negatively affect the accuracy
+    /// of the search.)
     ///
-    /// If the key is present, the table *may* insert it and *may return either*
-    /// `None` or a reference to the associated value.
+    /// If the key is present, the table may either:
+    /// - Leave the table unchanged and return `Some(reference to associated value)`.
+    /// - Leave the table unchanged and return `None`.
+    ///
+    /// The table *may* choose to replace old values.
+    /// The table is *not* responsible for dropping values that are replaced.
     fn insert<'a>(&'a self, key: &Spec::State, value: &'a SearchNode<Spec>,
             handle: SearchHandle<Spec>) -> Option<&'a SearchNode<Spec>>;
 
@@ -23,7 +33,7 @@ pub trait TranspositionTable<Spec: MCTS>: Sync + Sized {
             -> Option<&'a SearchNode<Spec>>;
 }
 
-impl<Spec: MCTS<TranspositionTable=Self>> TranspositionTable<Spec> for () {
+unsafe impl<Spec: MCTS<TranspositionTable=Self>> TranspositionTable<Spec> for () {
     fn insert<'a>(&'a self, _: &Spec::State, _: &'a SearchNode<Spec>,
             _: SearchHandle<Spec>) -> Option<&'a SearchNode<Spec>> {
         None
@@ -92,11 +102,7 @@ fn get_or_write<'a, V>(ptr: &AtomicPtr<V>, v: &'a V) -> Option<&'a V> {
         std::ptr::null_mut(),
         v as *const _ as *mut _,
         Ordering::Relaxed);
-    if result == std::ptr::null_mut() {
-        Some(v)
-    } else {
-        convert(result)
-    }
+    convert(result)
 }
 
 fn convert<'a, V>(ptr: *const V) -> Option<&'a V> {
@@ -107,7 +113,9 @@ fn convert<'a, V>(ptr: *const V) -> Option<&'a V> {
     }
 }
 
-impl<Spec> TranspositionTable<Spec> for LossyQuadraticProbingHashTableForMCTS<Spec>
+const PROBE_LIMIT: usize = 16;
+
+unsafe impl<Spec> TranspositionTable<Spec> for LossyQuadraticProbingHashTableForMCTS<Spec>
     where Spec::State: TranspositionHash, Spec: MCTS
 {
     fn insert<'a>(&'a self, key: &Spec::State, value: &'a SearchNode<Spec>,
@@ -120,11 +128,14 @@ impl<Spec> TranspositionTable<Spec> for LossyQuadraticProbingHashTableForMCTS<Sp
             return None;
         }
         let mut posn = my_hash as usize & self.mask;
-        let mut inc = 0;
-        loop {
+        for inc in 1..(PROBE_LIMIT + 1) {
             let entry = unsafe { self.arr.get_unchecked(posn) };
             let key_here = entry.k.load(Ordering::Relaxed) as u64;
             if key_here == my_hash {
+                let value_here = entry.v.load(Ordering::Relaxed);
+                if value_here != std::ptr::null_mut() {
+                    return unsafe { Some(&*value_here) };
+                }
                 return get_or_write(&entry.v, value);
             }
             if key_here == 0 {
@@ -134,17 +145,16 @@ impl<Spec> TranspositionTable<Spec> for LossyQuadraticProbingHashTableForMCTS<Sp
                     return get_or_write(&entry.v, value);
                 }
             }
-            inc += 1;
             posn += inc;
             posn &= self.mask;
         }
+        None
     }
     fn lookup<'a>(&'a self, key: &Spec::State, _: SearchHandle<Spec>)
             -> Option<&'a SearchNode<Spec>> {
         let my_hash = key.hash();
         let mut posn = my_hash as usize & self.mask;
-        let mut inc = 0;
-        loop {
+        for inc in 1..(PROBE_LIMIT + 1) {
             let entry = unsafe { self.arr.get_unchecked(posn) };
             let key_here = entry.k.load(Ordering::Relaxed) as u64;
             if key_here == my_hash {
@@ -153,9 +163,9 @@ impl<Spec> TranspositionTable<Spec> for LossyQuadraticProbingHashTableForMCTS<Sp
             if key_here == 0 {
                 return None;
             }
-            inc += 1;
             posn += inc;
             posn &= self.mask;
         }
+        None
     }
 }

@@ -75,7 +75,7 @@ impl MCTS for MyMCTS {
 
 fn main() {
     let game = CountingGame(0);
-    let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(5.0));
+    let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(5.0), ());
     mcts.playout_n(100000);
     let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
     println!("Principal variation: {:?}", pv);

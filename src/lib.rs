@@ -80,10 +80,15 @@
 //!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
 //!     type TranspositionTable = LossyQuadraticProbingHashTableForMCTS<Self>;
+//!
+//!     fn virtual_loss(&self) -> i64 {
+//!         100
+//!     }
 //! }
 //! 
 //! let game = CountingGame(0);
-//! let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(0.5));
+//! let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(0.5),
+//!     LossyQuadraticProbingHashTable::new(1024));
 //! mcts.playout_n_parallel(100000, 4);
 //! mcts.tree().debug_moves();
 //! assert_eq!(mcts.principal_variation(50),
@@ -119,7 +124,7 @@ pub trait MCTS: Sized + Sync {
     type State: GameState + Sync;
     type Eval: Evaluator<Self>;
     type TreePolicy: TreePolicy<Self>;
-    type NodeData: Default + Sync;
+    type NodeData: Default + Sync + Send;
     type TranspositionTable: TranspositionTable<Self>;
     type ExtraThreadData;
 
@@ -135,7 +140,9 @@ pub trait MCTS: Sized + Sync {
     fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
         children.into_iter().max_by_key(|child| child.visits()).unwrap()
     }
-
+    fn max_playout_length(&self) -> usize {
+        1000
+    }
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
 }
 
@@ -163,7 +170,7 @@ pub type Player<Spec> = <<Spec as MCTS>::State as GameState>::Player;
 pub type TreePolicyThreadData<Spec> = <<Spec as MCTS>::TreePolicy as TreePolicy<Spec>>::ThreadLocalData;
 
 pub trait GameState: Clone {
-    type Move: Sync + Clone;
+    type Move: Sync + Send + Clone;
     type Player: Sync;
     type MoveList: std::iter::IntoIterator<Item=Self::Move>;
 
@@ -173,7 +180,7 @@ pub trait GameState: Clone {
 }
 
 pub trait Evaluator<Spec: MCTS>: Sync {
-    type StateEvaluation: Sync;
+    type StateEvaluation: Sync + Send;
 
     fn evaluate_new_state(&self,
         state: &Spec::State, moves: &MoveList<Spec>,

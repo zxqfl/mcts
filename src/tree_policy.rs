@@ -6,7 +6,7 @@ use super::*;
 use search_tree::*;
 
 pub trait TreePolicy<Spec: MCTS<TreePolicy=Self>>: Sync + Sized {
-    type MoveEvaluation: Sync;
+    type MoveEvaluation: Sync + Send;
     type ThreadLocalData: Default;
 
     fn choose_child<'a, MoveIter>(&self, moves: MoveIter, handle: SearchHandle<Spec>) -> &'a MoveInfo<Spec>

@@ -4,7 +4,7 @@ use std;
 
 use atomics::*;
 use super::*;
-use std::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
+use std::sync::Mutex;
 use std::ptr::{null, null_mut};
 use smallvec::SmallVec;
 use std::fmt;
@@ -22,12 +22,14 @@ pub struct SearchTree<Spec: MCTS> {
     eval: Spec::Eval,
     manager: Spec,
     num_nodes: AtomicUsize,
+    orphaned: Mutex<Vec<Box<SearchNode<Spec>>>>,
 }
 
 pub struct MoveInfo<Spec: MCTS> {
     mov: Move<Spec>,
     move_evaluation: MoveEvaluation<Spec>,
     child: AtomicPtr<SearchNode<Spec>>,
+    owned: AtomicBool,
     visits: AtomicUsize,
     sum_evaluations: AtomicI64,
 }
@@ -57,6 +59,7 @@ impl<Spec: MCTS> MoveInfo<Spec> {
             child: AtomicPtr::default(),
             visits: AtomicUsize::new(0),
             sum_evaluations: AtomicI64::new(0),
+            owned: AtomicBool::new(false),
         }
     }
 
@@ -112,6 +115,9 @@ impl<Spec: MCTS> Debug for MoveInfo<Spec> where Move<Spec>: Debug {
 
 impl<Spec: MCTS> Drop for MoveInfo<Spec> {
     fn drop(&mut self) {
+        if !self.owned.load(Ordering::SeqCst) {
+            return;
+        }
         let ptr = self.child.load(Ordering::SeqCst);
         if ptr != null_mut() {
             unsafe {
@@ -145,6 +151,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
             eval,
             table,
             num_nodes: AtomicUsize::new(1),
+            orphaned: Mutex::new(Vec::new()),
         }
     }
 
@@ -182,37 +189,13 @@ impl<Spec: MCTS> SearchTree<Spec> {
             choice.sum_evaluations.fetch_sub(self.manager.virtual_loss() as isize, Ordering::Relaxed);
             players.push(state.current_player());
             path.push(choice);
+            assert!(path.len() <= self.manager.max_playout_length(),
+                "playout length exceeded maximum of {} (maybe the transposition table is creating an infinite loop?)",
+                self.manager.max_playout_length());
             state.make_move(&choice.mov);
-            let mut child;
-            loop {
-                child = choice.child.load(Ordering::Acquire) as *const SearchNode<Spec>;
-                did_we_create = false;
-                if child == null() {
-                    let new_child = create_node(&self.eval, &self.tree_policy, &state,
-                        Some(self.make_handle(node, tld)));
-                    let new_child = Box::into_raw(Box::new(new_child)); // move to heap
-                    let result = choice.child.compare_and_swap(null_mut(), new_child, Ordering::Release);
-                    if result == null_mut() {
-                        // compare and swap was successful
-                        did_we_create = true;
-                        child = new_child;
-                        self.num_nodes.fetch_add(1, Ordering::Relaxed);
-                        break;
-                    } else {
-                        // self.contention_events.fetch_add(1, Ordering::Relaxed);
-                        // someone else expanded this child before we did
-                        unsafe {
-                            Box::from_raw(new_child);
-                        }
-                    }
-                } else {
-                    break;
-                }
-            }
-            assert!(child != null());
-            node = unsafe {
-                &*child
-            };
+            let (new_node, new_did_we_create) = self.descend(&state, choice, node, tld);
+            node = new_node;
+            did_we_create = new_did_we_create;
             if child_visits as u64 <= self.manager.visits_before_expansion() {
                 break;
             }
@@ -220,6 +203,38 @@ impl<Spec: MCTS> SearchTree<Spec> {
         self.num_nodes.fetch_sub(1, Ordering::Relaxed);
         self.finish_playout(did_we_create, &state, &path, &players, tld, node);
         true
+    }
+
+    fn descend<'a, 'b>(&'a self, state: &Spec::State, choice: &MoveInfo<Spec>,
+            current_node: &'b SearchNode<Spec>, tld: &'b mut ThreadData<Spec>)
+            -> (&'a SearchNode<Spec>, bool) {
+        let child = choice.child.load(Ordering::Relaxed) as *const SearchNode<Spec>;
+        if child != null() {
+            return unsafe { (&* child, false) };
+        }
+        if let Some(node) = self.table.lookup(state, self.make_handle(current_node, tld)) {
+            return (node, false);
+        }
+        let created = create_node(&self.eval, &self.tree_policy, state, Some(self.make_handle(current_node, tld)));
+        let created = Box::into_raw(Box::new(created));
+        let other_child = choice.child.compare_and_swap(
+            null_mut(),
+            created,
+            Ordering::Relaxed);
+        if other_child != null_mut() {
+            unsafe {
+                Box::from_raw(created);
+                return (&*other_child, false);
+            }
+        }
+        if let Some(existing) = self.table.insert(state, unsafe {&*created}, self.make_handle(current_node, tld)) {
+            let existing_ptr = existing as *const _ as *mut _;
+            choice.child.store(existing_ptr, Ordering::Relaxed);
+            self.orphaned.lock().unwrap().push(unsafe { Box::from_raw(created) });
+            return (existing, false);
+        }
+        choice.owned.store(true, Ordering::Relaxed);
+        unsafe { (&*created, true) }
     }
 
     fn finish_playout(&self, did_we_create: bool, state: &Spec::State,

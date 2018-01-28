@@ -89,6 +89,13 @@ impl<K: TranspositionHash, V> ApproxQuadraticProbingHashTable<K, V> {
         let mask = capacity - 1;
         Self {arr, mask, capacity, size: AtomicUsize::default()}
     }
+    pub fn enough_to_hold(num: usize) -> Self {
+        let mut capacity = 1;
+        while capacity * 2 < num * 3 {
+            capacity <<= 1;
+        }
+        Self::new(capacity)
+    }
 }
 
 unsafe impl<K: TranspositionHash, V> Sync for ApproxQuadraticProbingHashTable<K, V> {}

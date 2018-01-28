@@ -3,7 +3,7 @@ use search_tree::*;
 use atomics::*;
 
 pub unsafe trait TranspositionTable<Spec: MCTS>: Sync + Sized {
-    /// *If this function inserts a value, it must return `None`.* Failure to follow
+    /// **If this function inserts a value, it must return `None`.** Failure to follow
     /// this rule will lead to memory safety violation.
     ///
     /// Attempts to insert a key/value pair.

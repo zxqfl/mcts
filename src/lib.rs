@@ -142,11 +142,11 @@ pub trait MCTS: Sized + Sync {
         1_000_000
     }
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
-    fn cycle_behaviour(&self) -> CycleBehaviour {
+    fn cycle_behaviour(&self) -> CycleBehaviour<Self> {
         if std::mem::size_of::<Self::TranspositionTable>() == 0 {
             CycleBehaviour::Ignore
         } else {
-            CycleBehaviour::UseCurrentEvalWhenCycleDetected
+            CycleBehaviour::PanicWhenCycleDetected
         }
     }
 }
@@ -316,8 +316,15 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
             }
         });
     }
+    pub fn principal_variation_info(&self, num_moves: usize) -> Vec<MoveInfoHandle<Spec>> {
+        self.search_tree.principal_variation(num_moves)
+    }
     pub fn principal_variation(&self, num_moves: usize) -> Vec<Move<Spec>> {
         self.search_tree.principal_variation(num_moves)
+            .into_iter()
+            .map(|x| x.get_move())
+            .map(|x| x.clone())
+            .collect()
     }
     pub fn principal_variation_states(&self, num_moves: usize)
             -> Vec<Spec::State> {
@@ -432,10 +439,9 @@ impl<Spec: MCTS> From<MCTSManager<Spec>> for AsyncSearchOwned<Spec> {
     }
 }
 
-#[repr(u8)]
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
-pub enum CycleBehaviour {
+pub enum CycleBehaviour<Spec: MCTS> {
     Ignore,
     UseCurrentEvalWhenCycleDetected,
     PanicWhenCycleDetected,
+    UseThisEvalWhenCycleDetected(StateEvaluation<Spec>),
 }

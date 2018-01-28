@@ -80,17 +80,14 @@
 //!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
 //!     type TranspositionTable = ApproxTable<Self>;
-//!
-//!     fn virtual_loss(&self) -> i64 {
-//!         100
-//!     }
 //! }
 //! 
 //! let game = CountingGame(0);
 //! let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(0.5),
-//!     LossyQuadraticProbingHashTable::new(1024));
-//! mcts.playout_n_parallel(100000, 4);
+//!     ApproxTable::new(1024));
+//! mcts.playout_n_parallel(10000, 4); // 10000 playouts, 4 search threads
 //! mcts.tree().debug_moves();
+//! assert_eq!(mcts.best_move().unwrap(), Move::Add);
 //! assert_eq!(mcts.principal_variation(50),
 //!     vec![Move::Add; 50]);
 //! assert_eq!(mcts.principal_variation_states(5),
@@ -140,10 +137,18 @@ pub trait MCTS: Sized + Sync {
     fn select_child_after_search<'a>(&self, children: &'a [MoveInfo<Self>]) -> &'a MoveInfo<Self> {
         children.into_iter().max_by_key(|child| child.visits()).unwrap()
     }
+    /// `playout` panics when this length is exceeded. Defaults to one million.
     fn max_playout_length(&self) -> usize {
-        1000
+        1_000_000
     }
     fn on_backpropagation(&self, _evaln: &StateEvaluation<Self>, _handle: SearchHandle<Self>) {}
+    fn cycle_behaviour(&self) -> CycleBehaviour {
+        if std::mem::size_of::<Self::TranspositionTable>() == 0 {
+            CycleBehaviour::Ignore
+        } else {
+            CycleBehaviour::UseCurrentEvalWhenCycleDetected
+        }
+    }
 }
 
 pub struct ThreadData<Spec: MCTS> {
@@ -425,4 +430,12 @@ impl<Spec: MCTS> From<MCTSManager<Spec>> for AsyncSearchOwned<Spec> {
             threads: Vec::new(),
         }
     }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+pub enum CycleBehaviour {
+    Ignore,
+    UseCurrentEvalWhenCycleDetected,
+    PanicWhenCycleDetected,
 }

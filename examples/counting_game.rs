@@ -2,6 +2,7 @@ extern crate mcts;
 
 use mcts::*;
 use mcts::tree_policy::*;
+use mcts::transposition_table::*;
 
 #[derive(Clone)]
 struct CountingGame(i64);
@@ -37,6 +38,12 @@ impl GameState for CountingGame {
     }
 }
 
+impl TranspositionHash for CountingGame {
+    fn hash(&self) -> u64 {
+        self.0 as u64
+    }
+}
+
 struct MyEvaluator;
 
 impl Evaluator<MyMCTS> for MyEvaluator {
@@ -66,7 +73,7 @@ impl MCTS for MyMCTS {
     type NodeData = ();
     type ExtraThreadData = ();
     type TreePolicy = UCTPolicy;
-    type TranspositionTable = ();
+    type TranspositionTable = ApproxTable<Self>;
 
     fn virtual_loss(&self) -> i64 {
         500
@@ -75,7 +82,8 @@ impl MCTS for MyMCTS {
 
 fn main() {
     let game = CountingGame(0);
-    let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(5.0), ());
+    let mut mcts = MCTSManager::new(game, MyMCTS, MyEvaluator, UCTPolicy::new(5.0),
+        ApproxTable::new(1024));
     mcts.playout_n(100000);
     let pv: Vec<_> = mcts.principal_variation_states(10).into_iter().map(|x| x.0).collect();
     println!("Principal variation: {:?}", pv);

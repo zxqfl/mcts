@@ -25,19 +25,24 @@ pub struct SearchTree<Spec: MCTS> {
     orphaned: Mutex<Vec<Box<SearchNode<Spec>>>>,
 }
 
+struct NodeStats {
+    visits: AtomicUsize,
+    sum_evaluations: AtomicI64,
+}
+
 pub struct MoveInfo<Spec: MCTS> {
     mov: Move<Spec>,
     move_evaluation: MoveEvaluation<Spec>,
     child: AtomicPtr<SearchNode<Spec>>,
     owned: AtomicBool,
-    visits: AtomicUsize,
-    sum_evaluations: AtomicI64,
+    stats: NodeStats,
 }
 
 pub struct SearchNode<Spec: MCTS> {
     moves: Vec<MoveInfo<Spec>>,
     data: Spec::NodeData,
     evaln: StateEvaluation<Spec>,
+    stats: NodeStats,
 }
 
 impl<Spec: MCTS> SearchNode<Spec> {
@@ -47,6 +52,7 @@ impl<Spec: MCTS> SearchNode<Spec> {
             moves,
             data: Default::default(),
             evaln,
+            stats: NodeStats::new(),
         }
     }
 }
@@ -57,8 +63,7 @@ impl<Spec: MCTS> MoveInfo<Spec> {
             mov,
             move_evaluation,
             child: AtomicPtr::default(),
-            visits: AtomicUsize::new(0),
-            sum_evaluations: AtomicI64::new(0),
+            stats: NodeStats::new(),
             owned: AtomicBool::new(false),
         }
     }
@@ -72,11 +77,11 @@ impl<Spec: MCTS> MoveInfo<Spec> {
     }
 
     pub fn visits(&self) -> u64 {
-        self.visits.load(Ordering::Relaxed) as u64
+        self.stats.visits.load(Ordering::Relaxed) as u64
     }
 
     pub fn sum_rewards(&self) -> i64 {
-        self.sum_evaluations.load(Ordering::Relaxed) as i64
+        self.stats.sum_evaluations.load(Ordering::Relaxed) as i64
     }
 
     pub fn child(&self) -> Option<NodeHandle<Spec>> {
@@ -139,6 +144,10 @@ fn create_node<Spec: MCTS>(eval: &Spec::Eval, policy: &Spec::TreePolicy, state: 
     SearchNode::new(moves, state_eval)
 }
 
+fn is_cycle<T>(past: &[&T], current: &T) -> bool {
+    past.iter().any(|x| *x as *const T == current as *const T)
+}
+
 impl<Spec: MCTS> SearchTree<Spec> {
     pub fn new(state: Spec::State, manager: Spec, tree_policy: Spec::TreePolicy, eval: Spec::Eval,
             table: Spec::TranspositionTable) -> Self {
@@ -177,6 +186,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
         }
         let mut state = self.root_state.clone();
         let mut path: SmallVec<[&MoveInfo<Spec>; LARGE_DEPTH]> = SmallVec::new();
+        let mut node_path: SmallVec<[&SearchNode<Spec>; LARGE_DEPTH]> = SmallVec::new();
         let mut players: SmallVec<[Player<Spec>; LARGE_DEPTH]> = SmallVec::new();
         let mut did_we_create = false;
         let mut node = &self.root_node;
@@ -184,9 +194,11 @@ impl<Spec: MCTS> SearchTree<Spec> {
             if node.moves.len() == 0 {
                 break;
             }
+            if path.len() >= self.manager.max_playout_length() {
+                break;
+            }
             let choice = self.tree_policy.choose_child(node.moves.iter(), self.make_handle(node, tld));
-            let child_visits = choice.visits.fetch_add(1, Ordering::Relaxed) + 1;
-            choice.sum_evaluations.fetch_sub(self.manager.virtual_loss() as isize, Ordering::Relaxed);
+            choice.stats.down(&self.manager);
             players.push(state.current_player());
             path.push(choice);
             assert!(path.len() <= self.manager.max_playout_length(),
@@ -196,12 +208,24 @@ impl<Spec: MCTS> SearchTree<Spec> {
             let (new_node, new_did_we_create) = self.descend(&state, choice, node, tld);
             node = new_node;
             did_we_create = new_did_we_create;
-            if child_visits as u64 <= self.manager.visits_before_expansion() {
+            match self.manager.cycle_behaviour() {
+                CycleBehaviour::Ignore => (),
+                CycleBehaviour::PanicWhenCycleDetected => if is_cycle(&node_path, node) {
+                    panic!("cycle detected! you should do one of the following:\n- make states acyclic\n- remove transposition table\n-change cycle_behaviour()");
+                },
+                CycleBehaviour::UseCurrentEvalWhenCycleDetected => if is_cycle(&node_path, node) {
+                    break;
+                },
+            };
+            node_path.push(node);
+            node.stats.down(&self.manager);
+            if node.stats.sum_evaluations.load(Ordering::Relaxed) as u64
+                    <= self.manager.visits_before_expansion() {
                 break;
             }
         }
         self.num_nodes.fetch_sub(1, Ordering::Relaxed);
-        self.finish_playout(did_we_create, &state, &path, &players, tld, node);
+        self.finish_playout(did_we_create, &state, &path, &node_path, &players, tld, node);
         true
     }
 
@@ -213,6 +237,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
             return unsafe { (&* child, false) };
         }
         if let Some(node) = self.table.lookup(state, self.make_handle(current_node, tld)) {
+            // eprintln!("transposition hit");
             return (node, false);
         }
         let created = create_node(&self.eval, &self.tree_policy, state, Some(self.make_handle(current_node, tld)));
@@ -222,23 +247,32 @@ impl<Spec: MCTS> SearchTree<Spec> {
             created,
             Ordering::Relaxed);
         if other_child != null_mut() {
+            // eprintln!("info acquire failure");
             unsafe {
                 Box::from_raw(created);
                 return (&*other_child, false);
             }
         }
         if let Some(existing) = self.table.insert(state, unsafe {&*created}, self.make_handle(current_node, tld)) {
+            // eprintln!("delayed transposition hit");
             let existing_ptr = existing as *const _ as *mut _;
             choice.child.store(existing_ptr, Ordering::Relaxed);
             self.orphaned.lock().unwrap().push(unsafe { Box::from_raw(created) });
             return (existing, false);
         }
+        // eprintln!("creation succeeded");
         choice.owned.store(true, Ordering::Relaxed);
+        self.num_nodes.fetch_add(1, Ordering::Relaxed);
         unsafe { (&*created, true) }
     }
 
-    fn finish_playout(&self, did_we_create: bool, state: &Spec::State,
-            path: &[&MoveInfo<Spec>], players: &[Player<Spec>], tld: &mut ThreadData<Spec>,
+    fn finish_playout(&self,
+            did_we_create: bool,
+            state: &Spec::State,
+            path: &[&MoveInfo<Spec>],
+            node_path: &[&SearchNode<Spec>],
+            players: &[Player<Spec>],
+            tld: &mut ThreadData<Spec>,
             final_node: &SearchNode<Spec>) {
         let new_evaln = if did_we_create {
             None
@@ -246,12 +280,14 @@ impl<Spec: MCTS> SearchTree<Spec> {
             Some(self.eval.evaluate_existing_state(state, &final_node.evaln, self.make_handle(final_node, tld)))
         };
         let evaln = new_evaln.as_ref().unwrap_or(&final_node.evaln);
-        // Last ones more likely to be in cache
-        for (move_info, player) in path.iter().zip(players.iter()).rev() {
-            let delta =
-                  self.eval.interpret_evaluation_for_player(evaln, player)
-                + self.manager.virtual_loss();
-            move_info.sum_evaluations.fetch_add(delta as isize, Ordering::Relaxed);
+        for ((move_info, player), node) in
+                path.iter()
+                .zip(players.iter())
+                .zip(node_path.iter())
+                .rev() {
+            let evaln_value = self.eval.interpret_evaluation_for_player(evaln, player);
+            node.stats.up(&self.manager, evaln_value);
+            move_info.stats.replace(&node.stats);
             unsafe {
                 self.manager.on_backpropagation(&evaln, self.make_handle(&*move_info.child.load(Ordering::Relaxed), tld));
             }
@@ -363,5 +399,30 @@ impl<'a, Spec: MCTS> SearchHandle<'a, Spec> {
     }
     pub fn mcts(&self) -> &'a Spec {
         self.manager
+    }
+}
+
+impl NodeStats {
+    #[inline]
+    fn new() -> Self {
+        NodeStats {
+            sum_evaluations: AtomicI64::new(0),
+            visits: AtomicUsize::new(0),
+        }
+    }
+    #[inline]
+    fn down<Spec: MCTS>(&self, manager: &Spec) {
+        self.sum_evaluations.fetch_sub(manager.virtual_loss() as FakeI64, Ordering::Relaxed);
+        self.visits.fetch_add(1, Ordering::Relaxed);
+    }
+    #[inline]
+    fn up<Spec: MCTS>(&self, manager: &Spec, evaln: i64) {
+        let delta = evaln + manager.virtual_loss();
+        self.sum_evaluations.fetch_add(delta as FakeI64, Ordering::Relaxed);
+    }
+    #[inline]
+    fn replace(&self, other: &NodeStats) {
+        self.visits.store(other.visits.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.sum_evaluations.store(other.sum_evaluations.load(Ordering::Relaxed), Ordering::Relaxed);
     }
 }

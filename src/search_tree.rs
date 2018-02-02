@@ -195,7 +195,7 @@ impl<Spec: MCTS> SearchTree<Spec> {
         &self.manager
     }
 
-    pub fn node_count(&self) -> usize {
+    pub fn num_nodes(&self) -> usize {
         self.num_nodes.load(Ordering::SeqCst)
     }
 

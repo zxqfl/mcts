@@ -344,9 +344,9 @@ impl<Spec: MCTS> MCTSManager<Spec> where ThreadData<Spec>: Default {
     pub fn perf_test<F>(&mut self, num_threads: usize, mut f: F) where F: FnMut(usize) {
         let search = self.playout_parallel_async(num_threads);
         for _ in 0..10 {
-            let n1 = search.manager.search_tree.node_count();
+            let n1 = search.manager.search_tree.num_nodes();
             std::thread::sleep(Duration::from_secs(1));
-            let n2 = search.manager.search_tree.node_count();
+            let n2 = search.manager.search_tree.num_nodes();
             let diff = if n2 > n1 {
                 n2 - n1
             } else {

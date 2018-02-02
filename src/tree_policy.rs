@@ -81,7 +81,7 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for UCTPolicy
         let total_visits = moves.clone().map(|x| x.visits()).sum::<u64>();
         let adjusted_total = (total_visits + 1) as f64;
         let ln_adjusted_total = adjusted_total.ln();
-        handle.thread_local_data().policy_data.select_by_key(moves, |mov| {
+        handle.thread_data().policy_data.select_by_key(moves, |mov| {
             let sum_rewards = mov.sum_rewards();
             let child_visits = mov.visits();
             // http://mcts.ai/pubs/mcts-survey-master.pdf
@@ -107,7 +107,7 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for AlphaGoPolicy
         let total_visits = moves.clone().map(|x| x.visits()).sum::<u64>() + 1;
         let sqrt_total_visits = (total_visits as f64).sqrt();
         let explore_coef = self.exploration_constant * sqrt_total_visits;
-        handle.thread_local_data().policy_data.select_by_key(moves, |mov| {
+        handle.thread_data().policy_data.select_by_key(moves, |mov| {
             let sum_rewards = mov.sum_rewards() as f64;
             let child_visits = mov.visits();
             let policy_evaln = *mov.move_evaluation() as f64;

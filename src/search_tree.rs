@@ -436,7 +436,7 @@ impl<'a, Spec: MCTS> SearchHandle<'a, Spec> {
     pub fn node(&self) -> NodeHandle<'a, Spec> {
         NodeHandle {node: self.node}
     }
-    pub fn thread_local_data(&mut self) -> &mut ThreadData<Spec> {
+    pub fn thread_data(&mut self) -> &mut ThreadData<Spec> {
         self.tld
     }
     pub fn mcts(&self) -> &'a Spec {

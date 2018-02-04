@@ -393,9 +393,7 @@ impl<'a, Spec: MCTS> AsyncSearch<'a, Spec> {
 impl<'a, Spec: MCTS> Drop for AsyncSearch<'a, Spec> {
     fn drop(&mut self) {
         self.stop_signal.store(true, Ordering::SeqCst);
-        for t in self.threads.drain(..) {
-            t.join().unwrap();
-        }
+        drain_join_unwrap(&mut self.threads);
     }
 }
 
@@ -409,9 +407,7 @@ pub struct AsyncSearchOwned<Spec: MCTS> {
 impl<Spec: MCTS> AsyncSearchOwned<Spec> {
     fn stop_threads(&mut self) {
         self.stop_signal.store(true, Ordering::SeqCst);
-        for t in self.threads.drain(..) {
-            t.join().unwrap();
-        }
+        drain_join_unwrap(&mut self.threads);
     }
     pub fn halt(mut self) -> MCTSManager<Spec> {
         self.stop_threads();
@@ -436,6 +432,13 @@ impl<Spec: MCTS> From<MCTSManager<Spec>> for AsyncSearchOwned<Spec> {
             stop_signal: Arc::new(AtomicBool::new(false)),
             threads: Vec::new(),
         }
+    }
+}
+
+fn drain_join_unwrap(threads: &mut Vec<JoinHandle<()>>) {
+    let join_results: Vec<_> = threads.drain(..).map(|x| x.join()).collect();
+    for x in join_results {
+        x.unwrap();
     }
 }
 

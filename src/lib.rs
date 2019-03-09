@@ -80,6 +80,10 @@
 //!     type ExtraThreadData = ();
 //!     type TreePolicy = UCTPolicy;
 //!     type TranspositionTable = ApproxTable<Self>;
+//!
+//!     fn cycle_behaviour(&self) -> CycleBehaviour<Self> {
+//!         CycleBehaviour::UseCurrentEvalWhenCycleDetected
+//!     }
 //! }
 //! 
 //! let game = CountingGame(0);

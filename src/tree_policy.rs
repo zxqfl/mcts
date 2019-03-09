@@ -85,13 +85,13 @@ impl<Spec: MCTS<TreePolicy=Self>> TreePolicy<Spec> for UCTPolicy
             let sum_rewards = mov.sum_rewards();
             let child_visits = mov.visits();
             // http://mcts.ai/pubs/mcts-survey-master.pdf
-            let explore_term = if child_visits == 0 {
+            if child_visits == 0 {
                 std::f64::INFINITY
             } else {
-                2.0 * (ln_adjusted_total / child_visits as f64).sqrt()
-            };
-            let mean_action_value = sum_rewards as f64 / adjusted_total;
-            self.exploration_constant * explore_term + mean_action_value
+                let explore_term = 2.0 * (ln_adjusted_total / child_visits as f64).sqrt();
+                let mean_action_value = sum_rewards as f64 / child_visits as f64;
+                self.exploration_constant * explore_term + mean_action_value
+            }
         }).unwrap()
     }
 }
